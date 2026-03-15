@@ -6,7 +6,8 @@ export interface PaymentMethodConfig {
   id: string
   name: string
   key: string
-  requires_change: boolean
+  requires_amount_input: boolean   // テンキーで金額入力が必要か
+  requires_change: boolean         // お釣り計算が必要か（requires_amount_input=true が前提）
   is_active: boolean
   sort_order: number
   created_at: string

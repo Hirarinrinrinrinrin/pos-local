@@ -8,8 +8,17 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+} from '@/components/ui/select'
 import { toast } from 'sonner'
 import type { PaymentMethodConfig } from '@/types'
+
+// 入力タイプ（UI上の3択）
+type InputType = 'exact' | 'amount' | 'cash'
 
 interface PaymentMethodsClientProps {
   paymentMethods: PaymentMethodConfig[]
@@ -18,7 +27,7 @@ interface PaymentMethodsClientProps {
 interface PMForm {
   name: string
   key: string
-  requires_change: boolean
+  input_type: InputType
   is_active: boolean
   sort_order: string
 }
@@ -26,9 +35,29 @@ interface PMForm {
 const emptyForm: PMForm = {
   name: '',
   key: '',
-  requires_change: false,
+  input_type: 'exact',
   is_active: true,
   sort_order: '0',
+}
+
+// InputType → DB フィールドへの変換
+function toFlags(input_type: InputType): { requires_amount_input: boolean; requires_change: boolean } {
+  if (input_type === 'cash')   return { requires_amount_input: true, requires_change: true }
+  if (input_type === 'amount') return { requires_amount_input: true, requires_change: false }
+  return { requires_amount_input: false, requires_change: false }
+}
+
+// DB フィールド → InputType への変換
+function toInputType(pm: PaymentMethodConfig): InputType {
+  if (pm.requires_change) return 'cash'
+  if (pm.requires_amount_input) return 'amount'
+  return 'exact'
+}
+
+const INPUT_TYPE_LABELS: Record<InputType, string> = {
+  exact:  'ぴったり払い（カード・QR等）',
+  amount: '金額入力・その他（テンキーあり）',
+  cash:   '現金（テンキーあり・お釣り計算）',
 }
 
 export function PaymentMethodsClient({ paymentMethods: initial }: PaymentMethodsClientProps) {
@@ -50,7 +79,7 @@ export function PaymentMethodsClient({ paymentMethods: initial }: PaymentMethods
     setForm({
       name: pm.name,
       key: pm.key,
-      requires_change: pm.requires_change,
+      input_type: toInputType(pm),
       is_active: pm.is_active,
       sort_order: pm.sort_order.toString(),
     })
@@ -73,10 +102,11 @@ export function PaymentMethodsClient({ paymentMethods: initial }: PaymentMethods
 
     setSaving(true)
     const supabase = createClient()
+    const flags = toFlags(form.input_type)
     const payload = {
       name: form.name.trim(),
       key: form.key.trim(),
-      requires_change: form.requires_change,
+      ...flags,
       is_active: form.is_active,
       sort_order: parseInt(form.sort_order) || 0,
     }
@@ -113,7 +143,9 @@ export function PaymentMethodsClient({ paymentMethods: initial }: PaymentMethods
           toast.error('作成に失敗しました')
         }
       } else {
-        setMethods((prev) => [...prev, data as PaymentMethodConfig].sort((a, b) => a.sort_order - b.sort_order))
+        setMethods((prev) =>
+          [...prev, data as PaymentMethodConfig].sort((a, b) => a.sort_order - b.sort_order)
+        )
         toast.success('支払方法を追加しました')
         setDialogOpen(false)
         router.refresh()
@@ -151,7 +183,7 @@ export function PaymentMethodsClient({ paymentMethods: initial }: PaymentMethods
             <tr className="text-left text-xs text-gray-500">
               <th className="px-4 py-3 font-medium">表示名</th>
               <th className="px-4 py-3 font-medium">識別キー</th>
-              <th className="px-4 py-3 font-medium text-center">お釣り</th>
+              <th className="px-4 py-3 font-medium">入力タイプ</th>
               <th className="px-4 py-3 font-medium text-center">並び順</th>
               <th className="px-4 py-3 font-medium text-center">状態</th>
               <th className="px-4 py-3 font-medium text-center">操作</th>
@@ -169,8 +201,8 @@ export function PaymentMethodsClient({ paymentMethods: initial }: PaymentMethods
                 <tr key={pm.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3 font-medium text-gray-800">{pm.name}</td>
                   <td className="px-4 py-3 font-mono text-gray-500 text-xs">{pm.key}</td>
-                  <td className="px-4 py-3 text-center text-gray-600">
-                    {pm.requires_change ? '✓' : '—'}
+                  <td className="px-4 py-3 text-gray-600 text-xs">
+                    {INPUT_TYPE_LABELS[toInputType(pm)]}
                   </td>
                   <td className="px-4 py-3 text-center text-gray-500">{pm.sort_order}</td>
                   <td className="px-4 py-3 text-center">
@@ -213,7 +245,7 @@ export function PaymentMethodsClient({ paymentMethods: initial }: PaymentMethods
                 id="pm-name"
                 value={form.name}
                 onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                placeholder="例: PayPay"
+                placeholder="例: PayPay、商品券"
               />
             </div>
             <div className="space-y-1">
@@ -223,12 +255,40 @@ export function PaymentMethodsClient({ paymentMethods: initial }: PaymentMethods
               <Input
                 id="pm-key"
                 value={form.key}
-                onChange={(e) => setForm((f) => ({ ...f, key: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '') }))}
-                placeholder="例: paypay"
+                onChange={(e) =>
+                  setForm((f) => ({
+                    ...f,
+                    key: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''),
+                  }))
+                }
+                placeholder="例: paypay、voucher"
                 disabled={!!editTarget}
                 className={editTarget ? 'bg-gray-50 text-gray-400' : ''}
               />
               <p className="text-xs text-gray-400">半角英小文字・数字・アンダースコアのみ</p>
+            </div>
+            <div className="space-y-1">
+              <Label>入力タイプ *</Label>
+              <Select
+                value={form.input_type}
+                onValueChange={(v) => setForm((f) => ({ ...f, input_type: v as InputType }))}
+              >
+                <SelectTrigger className="w-full">
+                  <span className="flex flex-1 text-left text-sm">
+                    {INPUT_TYPE_LABELS[form.input_type]}
+                  </span>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="exact">ぴったり払い（カード・QR等）</SelectItem>
+                  <SelectItem value="amount">金額入力・その他（テンキーあり）</SelectItem>
+                  <SelectItem value="cash">現金（テンキーあり・お釣り計算）</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-gray-400">
+                {form.input_type === 'exact'  && '合計金額をそのまま記録します'}
+                {form.input_type === 'amount' && 'テンキーで受け取り金額を入力します（お釣りなし）'}
+                {form.input_type === 'cash'   && 'テンキーで預かり金額を入力し、お釣りを計算します'}
+              </p>
             </div>
             <div className="space-y-1">
               <Label htmlFor="pm-sort">並び順</Label>
@@ -239,16 +299,6 @@ export function PaymentMethodsClient({ paymentMethods: initial }: PaymentMethods
                 onChange={(e) => setForm((f) => ({ ...f, sort_order: e.target.value }))}
                 min={0}
               />
-            </div>
-            <div className="flex items-center gap-2">
-              <input
-                id="pm-requires-change"
-                type="checkbox"
-                checked={form.requires_change}
-                onChange={(e) => setForm((f) => ({ ...f, requires_change: e.target.checked }))}
-                className="w-4 h-4 rounded"
-              />
-              <Label htmlFor="pm-requires-change">お釣りを計算する（現金払い向け）</Label>
             </div>
             <div className="flex items-center gap-2">
               <input

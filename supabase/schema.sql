@@ -35,7 +35,8 @@ CREATE TABLE IF NOT EXISTS payment_methods (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT NOT NULL,                        -- 表示名（例: 現金、クレジットカード）
   key TEXT NOT NULL UNIQUE,                  -- 識別子（例: cash, card, paypay）
-  requires_change BOOLEAN NOT NULL DEFAULT false,  -- お釣り計算が必要か
+  requires_amount_input BOOLEAN NOT NULL DEFAULT false,  -- テンキーで金額入力が必要か
+  requires_change BOOLEAN NOT NULL DEFAULT false,        -- お釣り計算が必要か（requires_amount_input=true が前提）
   is_active BOOLEAN NOT NULL DEFAULT true,
   sort_order INTEGER NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -136,7 +137,7 @@ INSERT INTO categories (name, sort_order) VALUES
   ('デザート', 3)
 ON CONFLICT DO NOTHING;
 
-INSERT INTO payment_methods (name, key, requires_change, sort_order) VALUES
-  ('現金', 'cash', true, 1),
-  ('カード', 'card', false, 2)
+INSERT INTO payment_methods (name, key, requires_amount_input, requires_change, sort_order) VALUES
+  ('現金', 'cash', true, true, 1),
+  ('カード', 'card', false, false, 2)
 ON CONFLICT (key) DO NOTHING;
