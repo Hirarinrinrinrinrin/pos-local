@@ -30,11 +30,22 @@ CREATE TABLE IF NOT EXISTS staff (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- 支払方法
+CREATE TABLE IF NOT EXISTS payment_methods (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,                        -- 表示名（例: 現金、クレジットカード）
+  key TEXT NOT NULL UNIQUE,                  -- 識別子（例: cash, card, paypay）
+  requires_change BOOLEAN NOT NULL DEFAULT false,  -- お釣り計算が必要か
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 -- 注文
 CREATE TABLE IF NOT EXISTS orders (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   total INTEGER NOT NULL CHECK (total >= 0),
-  payment_method TEXT NOT NULL CHECK (payment_method IN ('cash', 'card')),
+  payment_method TEXT NOT NULL,              -- payment_methods.key を格納
   payment_amount INTEGER NOT NULL CHECK (payment_amount >= 0),
   change_amount INTEGER NOT NULL DEFAULT 0,
   status TEXT NOT NULL CHECK (status IN ('completed', 'refunded')) DEFAULT 'completed',
@@ -55,6 +66,7 @@ CREATE TABLE IF NOT EXISTS order_items (
 -- =============================================
 -- インデックス
 -- =============================================
+CREATE INDEX IF NOT EXISTS idx_payment_methods_key ON payment_methods(key);
 CREATE INDEX IF NOT EXISTS idx_products_category ON products(category_id);
 CREATE INDEX IF NOT EXISTS idx_products_active ON products(is_active);
 CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at);
@@ -63,6 +75,7 @@ CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items(order_id);
 -- =============================================
 -- Row Level Security
 -- =============================================
+ALTER TABLE payment_methods ENABLE ROW LEVEL SECURITY;
 ALTER TABLE categories ENABLE ROW LEVEL SECURITY;
 ALTER TABLE products ENABLE ROW LEVEL SECURITY;
 ALTER TABLE staff ENABLE ROW LEVEL SECURITY;
@@ -70,6 +83,15 @@ ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE order_items ENABLE ROW LEVEL SECURITY;
 
 -- 認証済みユーザーは全テーブル参照可能
+CREATE POLICY "Authenticated users can read payment_methods"
+  ON payment_methods FOR SELECT TO authenticated USING (true);
+
+CREATE POLICY "Admin can manage payment_methods"
+  ON payment_methods FOR ALL TO authenticated
+  USING (
+    EXISTS (SELECT 1 FROM staff WHERE id = auth.uid() AND role = 'admin')
+  );
+
 CREATE POLICY "Authenticated users can read categories"
   ON categories FOR SELECT TO authenticated USING (true);
 
@@ -113,3 +135,8 @@ INSERT INTO categories (name, sort_order) VALUES
   ('ドリンク', 2),
   ('デザート', 3)
 ON CONFLICT DO NOTHING;
+
+INSERT INTO payment_methods (name, key, requires_change, sort_order) VALUES
+  ('現金', 'cash', true, 1),
+  ('カード', 'card', false, 2)
+ON CONFLICT (key) DO NOTHING;

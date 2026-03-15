@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useCartStore } from '@/store/cartStore'
 import { createClient } from '@/lib/supabase/client'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -8,32 +8,40 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { toast } from 'sonner'
-import type { Order, PaymentMethod } from '@/types'
+import type { Order, PaymentMethodConfig } from '@/types'
 
 interface PaymentDialogProps {
   open: boolean
   onClose: () => void
   onComplete: (order: Order) => void
+  paymentMethods: PaymentMethodConfig[]
 }
 
 const QUICK_AMOUNTS = [1000, 5000, 10000]
 
-export function PaymentDialog({ open, onClose, onComplete }: PaymentDialogProps) {
+export function PaymentDialog({ open, onClose, onComplete, paymentMethods }: PaymentDialogProps) {
   const { items, total, clearCart } = useCartStore()
-  const [method, setMethod] = useState<PaymentMethod>('cash')
+  const [method, setMethod] = useState<string>(paymentMethods[0]?.key ?? 'cash')
   const [cashInput, setCashInput] = useState('')
   const [loading, setLoading] = useState(false)
+
+  // ダイアログが開くたびに最初の支払方法にリセット
+  useEffect(() => {
+    if (open) {
+      setMethod(paymentMethods[0]?.key ?? 'cash')
+      setCashInput('')
+    }
+  }, [open, paymentMethods])
 
   const totalAmount = total()
   const cashAmount = parseInt(cashInput.replace(/[^0-9]/g, '')) || 0
   const change = cashAmount - totalAmount
 
-  const handleQuickAmount = (amount: number) => {
-    setCashInput(amount.toString())
-  }
+  const selectedMethod = paymentMethods.find((m) => m.key === method)
+  const requiresChange = selectedMethod?.requires_change ?? false
 
   const handleSubmit = async () => {
-    if (method === 'cash' && cashAmount < totalAmount) {
+    if (requiresChange && cashAmount < totalAmount) {
       toast.error('預り金が不足しています')
       return
     }
@@ -48,8 +56,8 @@ export function PaymentDialog({ open, onClose, onComplete }: PaymentDialogProps)
       .insert({
         total: totalAmount,
         payment_method: method,
-        payment_amount: method === 'cash' ? cashAmount : totalAmount,
-        change_amount: method === 'cash' ? Math.max(0, change) : 0,
+        payment_amount: requiresChange ? cashAmount : totalAmount,
+        change_amount: requiresChange ? Math.max(0, change) : 0,
         status: 'completed',
         staff_id: user?.id ?? null,
       })
@@ -99,24 +107,31 @@ export function PaymentDialog({ open, onClose, onComplete }: PaymentDialogProps)
 
           <div>
             <Label className="text-sm font-semibold mb-2 block">支払方法</Label>
-            <div className="grid grid-cols-2 gap-3">
-              {(['cash', 'card'] as PaymentMethod[]).map((m) => (
-                <button
-                  key={m}
-                  onClick={() => setMethod(m)}
-                  className={`py-3 rounded-xl border-2 font-semibold text-sm transition-colors touch-manipulation ${
-                    method === m
-                      ? 'border-blue-600 bg-blue-50 text-blue-700'
-                      : 'border-gray-200 text-gray-600 hover:border-gray-300'
-                  }`}
-                >
-                  {m === 'cash' ? '現金' : 'カード'}
-                </button>
-              ))}
-            </div>
+            {paymentMethods.length === 0 ? (
+              <p className="text-sm text-gray-400">支払方法が登録されていません</p>
+            ) : (
+              <div className="grid grid-cols-2 gap-3">
+                {paymentMethods.map((m) => (
+                  <button
+                    key={m.key}
+                    onClick={() => {
+                      setMethod(m.key)
+                      setCashInput('')
+                    }}
+                    className={`py-3 rounded-xl border-2 font-semibold text-sm transition-colors touch-manipulation ${
+                      method === m.key
+                        ? 'border-blue-600 bg-blue-50 text-blue-700'
+                        : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                    }`}
+                  >
+                    {m.name}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
-          {method === 'cash' && (
+          {requiresChange && (
             <div className="space-y-3">
               <div>
                 <Label htmlFor="cash-input" className="text-sm font-semibold">預り金</Label>
@@ -138,7 +153,7 @@ export function PaymentDialog({ open, onClose, onComplete }: PaymentDialogProps)
                 {QUICK_AMOUNTS.map((amt) => (
                   <button
                     key={amt}
-                    onClick={() => handleQuickAmount(amt)}
+                    onClick={() => setCashInput(amt.toString())}
                     className="flex-1 py-2 rounded-lg border border-gray-300 text-sm font-medium hover:bg-gray-50 active:scale-95 transition-transform touch-manipulation"
                   >
                     ¥{amt.toLocaleString()}
@@ -162,7 +177,11 @@ export function PaymentDialog({ open, onClose, onComplete }: PaymentDialogProps)
             <Button
               onClick={handleSubmit}
               className="flex-1 h-12 bg-blue-600 hover:bg-blue-700 font-bold touch-manipulation"
-              disabled={loading || (method === 'cash' && (cashAmount < totalAmount || !cashInput))}
+              disabled={
+                loading ||
+                paymentMethods.length === 0 ||
+                (requiresChange && (cashAmount < totalAmount || !cashInput))
+              }
             >
               {loading ? '処理中...' : '確定'}
             </Button>

@@ -13,18 +13,19 @@ import {
   SelectTrigger,
 } from '@/components/ui/select'
 import { toast } from 'sonner'
-import type { Order, PaymentMethod, OrderStatus } from '@/types'
+import type { Order, OrderStatus, PaymentMethodConfig } from '@/types'
 
 interface OrdersClientProps {
   orders: Order[]
+  paymentMethods: PaymentMethodConfig[]
 }
 
 interface EditForm {
-  payment_method: PaymentMethod
+  payment_method: string
   status: OrderStatus
 }
 
-export function OrdersClient({ orders: initialOrders }: OrdersClientProps) {
+export function OrdersClient({ orders: initialOrders, paymentMethods }: OrdersClientProps) {
   const [orders, setOrders] = useState(initialOrders)
   const [selected, setSelected] = useState<Order | null>(null)
   const [form, setForm] = useState<EditForm>({ payment_method: 'cash', status: 'completed' })
@@ -102,7 +103,7 @@ export function OrdersClient({ orders: initialOrders }: OrdersClientProps) {
                     {order.order_items?.length ?? 0}点
                   </td>
                   <td className="px-4 py-3 text-gray-600">
-                    {order.payment_method === 'cash' ? '現金' : 'カード'}
+                    {paymentMethods.find((m) => m.key === order.payment_method)?.name ?? order.payment_method}
                   </td>
                   <td className="px-4 py-3 text-center">
                     <Badge variant={order.status === 'completed' ? 'default' : 'destructive'}>
@@ -178,16 +179,17 @@ export function OrdersClient({ orders: initialOrders }: OrdersClientProps) {
                 <Label>支払い方法</Label>
                 <Select
                   value={form.payment_method}
-                  onValueChange={(v) => setForm((f) => ({ ...f, payment_method: v as PaymentMethod }))}
+                  onValueChange={(v) => setForm((f) => ({ ...f, payment_method: v }))}
                 >
                   <SelectTrigger className="w-full">
                     <span className="flex flex-1 text-left text-sm">
-                      {form.payment_method === 'cash' ? '現金' : 'カード'}
+                      {paymentMethods.find((m) => m.key === form.payment_method)?.name ?? form.payment_method}
                     </span>
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="cash">現金</SelectItem>
-                    <SelectItem value="card">カード</SelectItem>
+                    {paymentMethods.map((m) => (
+                      <SelectItem key={m.key} value={m.key}>{m.name}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>

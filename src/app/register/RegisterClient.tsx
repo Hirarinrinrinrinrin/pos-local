@@ -8,14 +8,15 @@ import { CartPanel } from '@/components/register/CartPanel'
 import { PaymentDialog } from '@/components/register/PaymentDialog'
 import { ReceiptDialog } from '@/components/register/ReceiptDialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import type { Category, Order, Product } from '@/types'
+import type { Category, Order, PaymentMethodConfig, Product } from '@/types'
 
 interface RegisterClientProps {
   categories: Category[]
   products: Product[]
+  paymentMethods: PaymentMethodConfig[]
 }
 
-export function RegisterClient({ categories, products }: RegisterClientProps) {
+export function RegisterClient({ categories, products, paymentMethods }: RegisterClientProps) {
   const router = useRouter()
   const [paymentOpen, setPaymentOpen] = useState(false)
   const [completedOrder, setCompletedOrder] = useState<Order | null>(null)
@@ -129,6 +130,7 @@ export function RegisterClient({ categories, products }: RegisterClientProps) {
         open={paymentOpen}
         onClose={() => setPaymentOpen(false)}
         onComplete={handleOrderComplete}
+        paymentMethods={paymentMethods}
       />
 
       <ReceiptDialog

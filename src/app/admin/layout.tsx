@@ -24,6 +24,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     { href: '/admin', label: 'ダッシュボード' },
     { href: '/admin/products', label: '商品管理' },
     { href: '/admin/categories', label: 'カテゴリ' },
+    { href: '/admin/payment-methods', label: '支払方法' },
     { href: '/admin/orders', label: '注文履歴' },
     { href: '/admin/staff', label: 'スタッフ' },
   ]

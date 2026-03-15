@@ -1,6 +1,16 @@
 export type Role = 'admin' | 'cashier'
-export type PaymentMethod = 'cash' | 'card'
+export type PaymentMethod = string   // payment_methods.key の値（例: 'cash', 'card', 'paypay'）
 export type OrderStatus = 'completed' | 'refunded'
+
+export interface PaymentMethodConfig {
+  id: string
+  name: string
+  key: string
+  requires_change: boolean
+  is_active: boolean
+  sort_order: number
+  created_at: string
+}
 
 export interface Category {
   id: string
