@@ -223,7 +223,7 @@ export function ProductsClient({ products: initialProducts, categories }: Produc
               <Label>カテゴリ</Label>
               <Select
                 value={form.category_id}
-                onValueChange={(value) => setForm((f): ProductForm => ({ ...f, category_id: value }))}
+                onValueChange={(value) => setForm((f): ProductForm => ({ ...f, category_id: value ?? '' }))}
               >
                 <SelectTrigger className="w-full">
                   <span className="flex flex-1 text-left text-sm">

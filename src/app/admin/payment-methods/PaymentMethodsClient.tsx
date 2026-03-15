@@ -8,12 +8,6 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-} from '@/components/ui/select'
 import { toast } from 'sonner'
 import type { PaymentMethodConfig } from '@/types'
 
@@ -269,21 +263,15 @@ export function PaymentMethodsClient({ paymentMethods: initial }: PaymentMethods
             </div>
             <div className="space-y-1">
               <Label>入力タイプ *</Label>
-              <Select
+              <select
                 value={form.input_type}
-                onValueChange={(v) => setForm((f) => ({ ...f, input_type: v as InputType }))}
+                onChange={(e) => setForm((f) => ({ ...f, input_type: e.target.value as InputType }))}
+                className="flex h-8 w-full rounded-lg border border-input bg-transparent px-2.5 py-1 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
-                <SelectTrigger className="w-full">
-                  <span className="flex flex-1 text-left text-sm">
-                    {INPUT_TYPE_LABELS[form.input_type]}
-                  </span>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="exact">ぴったり払い（カード・QR等）</SelectItem>
-                  <SelectItem value="amount">金額入力・その他（テンキーあり）</SelectItem>
-                  <SelectItem value="cash">現金（テンキーあり・お釣り計算）</SelectItem>
-                </SelectContent>
-              </Select>
+                <option value="exact">ぴったり払い（カード・QR等）</option>
+                <option value="amount">金額入力・その他（テンキーあり）</option>
+                <option value="cash">現金（テンキーあり・お釣り計算）</option>
+              </select>
               <p className="text-xs text-gray-400">
                 {form.input_type === 'exact'  && '合計金額をそのまま記録します'}
                 {form.input_type === 'amount' && 'テンキーで受け取り金額を入力します（お釣りなし）'}

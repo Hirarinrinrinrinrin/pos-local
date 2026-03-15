@@ -27,6 +27,7 @@ export function Numpad({ value, onChange }: NumpadProps) {
       {KEYS.map((key) => (
         <button
           key={key}
+          type="button"
           onClick={() => handleKey(key)}
           className={`py-4 rounded-xl border text-xl font-semibold transition-colors active:scale-95 touch-manipulation select-none
             ${key === '⌫'

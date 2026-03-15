@@ -6,12 +6,6 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-} from '@/components/ui/select'
 import { toast } from 'sonner'
 import type { Order, OrderStatus, PaymentMethodConfig } from '@/types'
 
@@ -177,40 +171,28 @@ export function OrdersClient({ orders: initialOrders, paymentMethods }: OrdersCl
               {/* 支払い方法（編集可） */}
               <div className="space-y-1">
                 <Label>支払い方法</Label>
-                <Select
+                <select
                   value={form.payment_method}
-                  onValueChange={(v) => setForm((f) => ({ ...f, payment_method: v }))}
+                  onChange={(e) => setForm((f) => ({ ...f, payment_method: e.target.value }))}
+                  className="flex h-8 w-full rounded-lg border border-input bg-transparent px-2.5 py-1 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
-                  <SelectTrigger className="w-full">
-                    <span className="flex flex-1 text-left text-sm">
-                      {paymentMethods.find((m) => m.key === form.payment_method)?.name ?? form.payment_method}
-                    </span>
-                  </SelectTrigger>
-                  <SelectContent>
-                    {paymentMethods.map((m) => (
-                      <SelectItem key={m.key} value={m.key}>{m.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  {paymentMethods.map((m) => (
+                    <option key={m.key} value={m.key}>{m.name}</option>
+                  ))}
+                </select>
               </div>
 
               {/* ステータス（編集可） */}
               <div className="space-y-1">
                 <Label>ステータス</Label>
-                <Select
+                <select
                   value={form.status}
-                  onValueChange={(v) => setForm((f) => ({ ...f, status: v as OrderStatus }))}
+                  onChange={(e) => setForm((f) => ({ ...f, status: e.target.value as OrderStatus }))}
+                  className="flex h-8 w-full rounded-lg border border-input bg-transparent px-2.5 py-1 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
-                  <SelectTrigger className="w-full">
-                    <span className="flex flex-1 text-left text-sm">
-                      {form.status === 'completed' ? '完了' : '返金'}
-                    </span>
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="completed">完了</SelectItem>
-                    <SelectItem value="refunded">返金</SelectItem>
-                  </SelectContent>
-                </Select>
+                  <option value="completed">完了</option>
+                  <option value="refunded">返金</option>
+                </select>
               </div>
 
               {/* 金額サマリ */}
