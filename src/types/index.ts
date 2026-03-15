@@ -72,3 +72,16 @@ export interface DailySummary {
   total: number
   order_count: number
 }
+
+export interface DailyClosing {
+  id: string
+  date: string  // 'YYYY-MM-DD'
+  total_sales: number
+  order_count: number
+  refund_count: number
+  refund_total: number
+  payment_breakdown: Record<string, number>
+  closed_by: string | null
+  note: string | null
+  closed_at: string
+}

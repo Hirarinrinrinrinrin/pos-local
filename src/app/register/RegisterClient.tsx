@@ -154,6 +154,7 @@ export function RegisterClient({ categories, products, paymentMethods }: Registe
         open={!!completedOrder}
         order={completedOrder}
         onClose={() => setCompletedOrder(null)}
+        paymentMethods={paymentMethods}
       />
     </div>
   )

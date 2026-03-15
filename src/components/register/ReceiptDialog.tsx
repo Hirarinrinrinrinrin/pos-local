@@ -3,15 +3,16 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
-import type { Order } from '@/types'
+import type { Order, PaymentMethodConfig } from '@/types'
 
 interface ReceiptDialogProps {
   open: boolean
   order: Order | null
   onClose: () => void
+  paymentMethods: PaymentMethodConfig[]
 }
 
-export function ReceiptDialog({ open, order, onClose }: ReceiptDialogProps) {
+export function ReceiptDialog({ open, order, onClose, paymentMethods }: ReceiptDialogProps) {
   if (!order) return null
 
   const handlePrint = () => window.print()
@@ -24,6 +25,9 @@ export function ReceiptDialog({ open, order, onClose }: ReceiptDialogProps) {
     hour: '2-digit',
     minute: '2-digit',
   })
+
+  const pm = paymentMethods.find((m) => m.key === order.payment_method)
+  const pmName = pm?.name ?? order.payment_method
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
@@ -58,18 +62,20 @@ export function ReceiptDialog({ open, order, onClose }: ReceiptDialogProps) {
             </div>
             <div className="flex justify-between text-xs text-gray-500">
               <span>支払</span>
-              <span>{order.payment_method === 'cash' ? '現金' : 'カード'}</span>
+              <span>{pmName}</span>
             </div>
-            {order.payment_method === 'cash' && (
+            {pm?.requires_amount_input && (
               <>
                 <div className="flex justify-between text-xs text-gray-500">
-                  <span>預り</span>
+                  <span>{pm.requires_change ? '預り' : '受取'}</span>
                   <span>¥{order.payment_amount.toLocaleString()}</span>
                 </div>
-                <div className="flex justify-between text-xs text-gray-500">
-                  <span>お釣り</span>
-                  <span>¥{order.change_amount.toLocaleString()}</span>
-                </div>
+                {pm.requires_change && (
+                  <div className="flex justify-between text-xs text-gray-500">
+                    <span>お釣り</span>
+                    <span>¥{order.change_amount.toLocaleString()}</span>
+                  </div>
+                )}
               </>
             )}
           </div>
