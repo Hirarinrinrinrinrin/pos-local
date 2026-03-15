@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { toast } from 'sonner'
+import { Numpad } from './Numpad'
 import type { Order, PaymentMethodConfig } from '@/types'
 
 interface PaymentDialogProps {
@@ -16,57 +17,7 @@ interface PaymentDialogProps {
   paymentMethods: PaymentMethodConfig[]
 }
 
-// テンキーのキー配列
-const NUMPAD_KEYS = ['7', '8', '9', '4', '5', '6', '1', '2', '3', '00', '0', '⌫'] as const
-// 現金クイック金額
 const QUICK_AMOUNTS = [1000, 5000, 10000]
-
-// ---- テンキーコンポーネント ----
-function Numpad({
-  value,
-  onChange,
-}: {
-  value: string
-  onChange: (v: string) => void
-}) {
-  const handleKey = (key: string) => {
-    if (key === '⌫') {
-      onChange(value.slice(0, -1))
-      return
-    }
-    const next = value + key
-    // 先頭ゼロ防止（"00" → 0 のまま）
-    if (/^0+$/.test(next)) {
-      onChange('0')
-      return
-    }
-    if (next.startsWith('0') && next.length > 1) {
-      onChange(next.replace(/^0+/, ''))
-      return
-    }
-    // 10桁超え防止
-    if (next.length > 9) return
-    onChange(next)
-  }
-
-  return (
-    <div className="grid grid-cols-3 gap-2">
-      {NUMPAD_KEYS.map((key) => (
-        <button
-          key={key}
-          onClick={() => handleKey(key)}
-          className={`h-13 py-3 rounded-xl border text-lg font-semibold transition-colors active:scale-95 touch-manipulation select-none
-            ${key === '⌫'
-              ? 'border-gray-300 bg-gray-100 text-gray-600 hover:bg-gray-200'
-              : 'border-gray-200 bg-white text-gray-800 hover:bg-gray-50'
-            }`}
-        >
-          {key}
-        </button>
-      ))}
-    </div>
-  )
-}
 
 export function PaymentDialog({ open, onClose, onComplete, paymentMethods }: PaymentDialogProps) {
   const { items, total, clearCart } = useCartStore()
@@ -74,7 +25,6 @@ export function PaymentDialog({ open, onClose, onComplete, paymentMethods }: Pay
   const [amountInput, setAmountInput] = useState('')
   const [loading, setLoading] = useState(false)
 
-  // ダイアログが開くたびにリセット
   useEffect(() => {
     if (open) {
       setMethod(paymentMethods[0]?.key ?? '')
@@ -123,9 +73,10 @@ export function PaymentDialog({ open, onClose, onComplete, paymentMethods }: Pay
       return
     }
 
+    // カスタム商品（id が 'custom_' 始まり）は product_id を null で保存
     const orderItems = items.map((item) => ({
       order_id: orderData.id,
-      product_id: item.product.id,
+      product_id: item.product.id.startsWith('custom_') ? null : item.product.id,
       name: item.product.name,
       price: item.product.price,
       quantity: item.quantity,
@@ -153,7 +104,6 @@ export function PaymentDialog({ open, onClose, onComplete, paymentMethods }: Pay
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      {/* テンキー表示時はダイアログを広げる */}
       <DialogContent className={requiresAmountInput ? 'max-w-sm' : 'max-w-md'}>
         <DialogHeader>
           <DialogTitle className="text-xl">お会計</DialogTitle>
@@ -176,10 +126,7 @@ export function PaymentDialog({ open, onClose, onComplete, paymentMethods }: Pay
                 {paymentMethods.map((m) => (
                   <button
                     key={m.key}
-                    onClick={() => {
-                      setMethod(m.key)
-                      setAmountInput('')
-                    }}
+                    onClick={() => { setMethod(m.key); setAmountInput('') }}
                     className={`py-3 rounded-xl border-2 font-semibold text-sm transition-colors touch-manipulation ${
                       method === m.key
                         ? 'border-blue-600 bg-blue-50 text-blue-700'
@@ -193,18 +140,15 @@ export function PaymentDialog({ open, onClose, onComplete, paymentMethods }: Pay
             )}
           </div>
 
-          {/* テンキー入力エリア（requires_amount_input のとき表示） */}
+          {/* テンキー入力エリア */}
           {requiresAmountInput && (
             <div className="space-y-3">
-              {/* 入力中の金額表示 */}
               <div className="flex items-baseline justify-between bg-gray-50 rounded-xl px-4 py-3">
                 <span className="text-sm text-gray-500">
                   {requiresChange ? '預り金' : '受取金額'}
                 </span>
-                <span className={`text-3xl font-bold tabular-nums ${
-                  amountInput ? 'text-gray-900' : 'text-gray-300'
-                }`}>
-                  ¥{amountInput ? parseInt(amountInput).toLocaleString() : '0'}
+                <span className={`text-3xl font-bold tabular-nums ${amountInput ? 'text-gray-900' : 'text-gray-300'}`}>
+                  ¥{enteredAmount > 0 ? enteredAmount.toLocaleString() : '0'}
                 </span>
               </div>
 
@@ -223,10 +167,8 @@ export function PaymentDialog({ open, onClose, onComplete, paymentMethods }: Pay
                 </div>
               )}
 
-              {/* テンキー */}
               <Numpad value={amountInput} onChange={setAmountInput} />
 
-              {/* お釣り表示（requiresChange のとき） */}
               {requiresChange && amountInput && (
                 <div className={`flex justify-between text-lg font-bold rounded-xl p-3 ${
                   change >= 0 ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'
@@ -240,12 +182,7 @@ export function PaymentDialog({ open, onClose, onComplete, paymentMethods }: Pay
 
           {/* ボタン */}
           <div className="flex gap-3 pt-1">
-            <Button
-              variant="outline"
-              onClick={onClose}
-              className="flex-1 h-12 touch-manipulation"
-              disabled={loading}
-            >
+            <Button variant="outline" onClick={onClose} className="flex-1 h-12 touch-manipulation" disabled={loading}>
               キャンセル
             </Button>
             <Button

@@ -6,6 +6,7 @@ const TAX_RATE = 0.10
 interface CartStore {
   items: CartItem[]
   addItem: (product: Product) => void
+  addCustomItem: (name: string, price: number) => void
   removeItem: (productId: string) => void
   updateQuantity: (productId: string, quantity: number) => void
   clearCart: () => void
@@ -16,6 +17,21 @@ interface CartStore {
 
 export const useCartStore = create<CartStore>((set, get) => ({
   items: [],
+
+  addCustomItem: (name, price) => {
+    // カスタム商品は毎回別行として追加（IDをユニークにして重複防止）
+    const customProduct: Product = {
+      id: `custom_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      name,
+      price,
+      category_id: '',
+      image_url: null,
+      stock: null,
+      is_active: true,
+      created_at: new Date().toISOString(),
+    }
+    set((state) => ({ items: [...state.items, { product: customProduct, quantity: 1 }] }))
+  },
 
   addItem: (product) => {
     set((state) => {

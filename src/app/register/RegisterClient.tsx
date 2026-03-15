@@ -7,6 +7,7 @@ import { ProductCard } from '@/components/register/ProductCard'
 import { CartPanel } from '@/components/register/CartPanel'
 import { PaymentDialog } from '@/components/register/PaymentDialog'
 import { ReceiptDialog } from '@/components/register/ReceiptDialog'
+import { CustomItemDialog } from '@/components/register/CustomItemDialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import type { Category, Order, PaymentMethodConfig, Product } from '@/types'
 
@@ -19,6 +20,7 @@ interface RegisterClientProps {
 export function RegisterClient({ categories, products, paymentMethods }: RegisterClientProps) {
   const router = useRouter()
   const [paymentOpen, setPaymentOpen] = useState(false)
+  const [customItemOpen, setCustomItemOpen] = useState(false)
   const [completedOrder, setCompletedOrder] = useState<Order | null>(null)
 
   const handleLogout = async () => {
@@ -64,6 +66,16 @@ export function RegisterClient({ categories, products, paymentMethods }: Registe
             </button>
           </div>
         </header>
+
+        {/* その他ボタン（常時表示） */}
+        <div className="px-4 pt-3 shrink-0">
+          <button
+            onClick={() => setCustomItemOpen(true)}
+            className="w-full py-2.5 rounded-xl border-2 border-dashed border-gray-300 text-gray-500 text-sm font-semibold hover:border-blue-400 hover:text-blue-600 hover:bg-blue-50 active:scale-[0.99] transition-colors touch-manipulation"
+          >
+            ＋ その他（金額入力）
+          </button>
+        </div>
 
         {/* Product grid with category tabs */}
         <div className="flex-1 overflow-hidden">
@@ -125,6 +137,11 @@ export function RegisterClient({ categories, products, paymentMethods }: Registe
       <div className="w-80 shrink-0 flex flex-col overflow-hidden">
         <CartPanel onCheckout={() => setPaymentOpen(true)} />
       </div>
+
+      <CustomItemDialog
+        open={customItemOpen}
+        onClose={() => setCustomItemOpen(false)}
+      />
 
       <PaymentDialog
         open={paymentOpen}
