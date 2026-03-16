@@ -77,6 +77,7 @@ export interface DailyOpening {
   id: string
   date: string  // 'YYYY-MM-DD'
   opening_cash: number
+  denomination_breakdown: Record<string, number>  // 金種内訳 {"10000": 3, "1000": 5, ...}
   opened_by: string | null
   note: string | null
   opened_at: string

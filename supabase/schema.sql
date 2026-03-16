@@ -69,6 +69,7 @@ CREATE TABLE IF NOT EXISTS daily_openings (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   date DATE NOT NULL UNIQUE,
   opening_cash INTEGER NOT NULL DEFAULT 0,
+  denomination_breakdown JSONB NOT NULL DEFAULT '{}',  -- 金種内訳 {"10000": 3, "1000": 5, ...}
   opened_by UUID REFERENCES staff(id) ON DELETE SET NULL,
   note TEXT,
   opened_at TIMESTAMPTZ NOT NULL DEFAULT now()

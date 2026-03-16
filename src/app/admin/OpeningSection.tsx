@@ -5,7 +5,6 @@ import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Separator } from '@/components/ui/separator'
-import { Numpad } from '@/components/register/Numpad'
 import { toast } from 'sonner'
 
 interface OpeningSectionProps {
@@ -15,6 +14,20 @@ interface OpeningSectionProps {
   openingCash: number
   onOpeningConfirmed: (cash: number) => void
 }
+
+// 金種一覧（高額順）
+const DENOMINATIONS = [
+  { value: 10000, label: '¥10,000' },
+  { value: 5000,  label: '¥5,000' },
+  { value: 2000,  label: '¥2,000' },
+  { value: 1000,  label: '¥1,000' },
+  { value: 500,   label: '¥500' },
+  { value: 100,   label: '¥100' },
+  { value: 50,    label: '¥50' },
+  { value: 10,    label: '¥10' },
+  { value: 5,     label: '¥5' },
+  { value: 1,     label: '¥1' },
+]
 
 export function OpeningSection({
   todayDate,
@@ -27,9 +40,22 @@ export function OpeningSection({
   const [openedAt, setOpenedAt] = useState(initialOpenedAt)
   const [openingCash, setOpeningCash] = useState(initialOpeningCash)
   const [dialogOpen, setDialogOpen] = useState(false)
-  const [cashInput, setCashInput] = useState('')
+  // 金種ごとの枚数 { "10000": "3", ... }
+  const [counts, setCounts] = useState<Record<number, string>>({})
   const [note, setNote] = useState('')
   const [saving, setSaving] = useState(false)
+
+  // 合計金額を自動計算
+  const total = DENOMINATIONS.reduce((sum, d) => {
+    const n = parseInt(counts[d.value] ?? '') || 0
+    return sum + d.value * n
+  }, 0)
+
+  const handleCountChange = (value: number, input: string) => {
+    // 数字のみ受け付け（空文字も許可）
+    if (input !== '' && !/^\d+$/.test(input)) return
+    setCounts((prev) => ({ ...prev, [value]: input }))
+  }
 
   const handleOpen = async () => {
     setSaving(true)
@@ -38,11 +64,17 @@ export function OpeningSection({
       data: { user },
     } = await supabase.auth.getUser()
 
-    const cash = parseInt(cashInput) || 0
+    // 金種内訳（枚数が0以上のもの）
+    const denominationBreakdown: Record<string, number> = {}
+    for (const d of DENOMINATIONS) {
+      const n = parseInt(counts[d.value] ?? '') || 0
+      if (n > 0) denominationBreakdown[String(d.value)] = n
+    }
 
     const { error } = await supabase.from('daily_openings').insert({
       date: todayDate,
-      opening_cash: cash,
+      opening_cash: total,
+      denomination_breakdown: denominationBreakdown,
       opened_by: user?.id ?? null,
       note: note.trim() || null,
     })
@@ -53,11 +85,11 @@ export function OpeningSection({
     } else {
       setOpened(true)
       setOpenedAt(new Date().toISOString())
-      setOpeningCash(cash)
+      setOpeningCash(total)
       setDialogOpen(false)
-      setCashInput('')
+      setCounts({})
       setNote('')
-      onOpeningConfirmed(cash)
+      onOpeningConfirmed(total)
       toast.success('開店しました')
     }
   }
@@ -100,22 +132,53 @@ export function OpeningSection({
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>開店処理</DialogTitle>
+            <DialogTitle>開店処理 — 釣り銭準備金</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 text-sm">
-            <div className="space-y-2">
-              <p className="text-xs text-gray-500 font-medium">釣り銭準備金</p>
-              <div className="flex items-baseline justify-between bg-gray-50 rounded-xl px-4 py-3">
-                <span className="text-sm text-gray-500">金額</span>
-                <span
-                  className={`text-3xl font-bold tabular-nums ${
-                    cashInput ? 'text-gray-900' : 'text-gray-300'
-                  }`}
-                >
-                  ¥{cashInput ? parseInt(cashInput).toLocaleString() : '0'}
-                </span>
-              </div>
-              <Numpad value={cashInput} onChange={setCashInput} />
+
+            {/* 金種テーブル */}
+            <div className="rounded-xl border border-gray-200 overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 text-xs text-gray-500">
+                  <tr>
+                    <th className="text-left px-3 py-2 font-medium">金種</th>
+                    <th className="text-right px-3 py-2 font-medium w-24">枚数</th>
+                    <th className="text-right px-3 py-2 font-medium w-28">小計</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {DENOMINATIONS.map((d) => {
+                    const n = parseInt(counts[d.value] ?? '') || 0
+                    const subtotal = d.value * n
+                    return (
+                      <tr key={d.value} className="hover:bg-gray-50/50">
+                        <td className="px-3 py-1.5 font-medium text-gray-700">{d.label}</td>
+                        <td className="px-3 py-1.5 text-right">
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            value={counts[d.value] ?? ''}
+                            onChange={(e) => handleCountChange(d.value, e.target.value)}
+                            placeholder="0"
+                            className="w-16 text-right border border-input rounded-md px-2 py-1 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring tabular-nums"
+                          />
+                        </td>
+                        <td className="px-3 py-1.5 text-right tabular-nums text-gray-600">
+                          {subtotal > 0 ? `¥${subtotal.toLocaleString()}` : '—'}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+                <tfoot className="bg-gray-50 border-t border-gray-200">
+                  <tr>
+                    <td colSpan={2} className="px-3 py-2 font-semibold text-gray-800">合計</td>
+                    <td className="px-3 py-2 text-right font-bold text-lg tabular-nums text-blue-700">
+                      ¥{total.toLocaleString()}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
             </div>
 
             <Separator />
@@ -143,7 +206,7 @@ export function OpeningSection({
               <Button
                 onClick={handleOpen}
                 className="flex-1 bg-blue-600 hover:bg-blue-700"
-                disabled={saving}
+                disabled={saving || total === 0}
               >
                 {saving ? '処理中...' : '開店する'}
               </Button>
