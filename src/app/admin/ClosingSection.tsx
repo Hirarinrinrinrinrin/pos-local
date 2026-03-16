@@ -17,6 +17,7 @@ interface ClosingSectionProps {
   refundTotal: number
   paymentBreakdown: Record<string, number>
   pmNameMap: Record<string, string>
+  openingCash: number  // 釣り銭準備金（OpeningSectionから連携）
 }
 
 export function ClosingSection({
@@ -29,12 +30,18 @@ export function ClosingSection({
   refundTotal,
   paymentBreakdown,
   pmNameMap,
+  openingCash,
 }: ClosingSectionProps) {
   const [closed, setClosed] = useState(initialClosed)
   const [closedAt, setClosedAt] = useState(initialClosedAt)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [note, setNote] = useState('')
   const [saving, setSaving] = useState(false)
+
+  // 現金売上（payment_breakdownのcashキー）
+  const cashSales = paymentBreakdown['cash'] ?? 0
+  // レジ内現金 = 釣り銭準備金 + 現金売上
+  const registerCash = openingCash + cashSales
 
   const handleClose = async () => {
     setSaving(true)
@@ -106,6 +113,7 @@ export function ClosingSection({
             <DialogTitle>営業締め確認</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 text-sm">
+            {/* 売上サマリー */}
             <div className="bg-gray-50 rounded-xl p-4 space-y-2">
               <div className="flex justify-between font-semibold text-base">
                 <span>本日の売上</span>
@@ -125,6 +133,7 @@ export function ClosingSection({
               )}
             </div>
 
+            {/* 支払方法別 */}
             {Object.keys(paymentBreakdown).length > 0 && (
               <div className="space-y-1.5">
                 <p className="text-xs text-gray-500 font-medium">支払方法別</p>
@@ -135,6 +144,28 @@ export function ClosingSection({
                   </div>
                 ))}
               </div>
+            )}
+
+            {/* 現金レジ残高（開店処理済みの場合のみ表示） */}
+            {openingCash > 0 && (
+              <>
+                <Separator />
+                <div className="space-y-1.5">
+                  <p className="text-xs text-gray-500 font-medium">レジ内現金</p>
+                  <div className="flex justify-between text-gray-600">
+                    <span>釣り銭準備金</span>
+                    <span>¥{openingCash.toLocaleString()}</span>
+                  </div>
+                  <div className="flex justify-between text-gray-600">
+                    <span>現金売上</span>
+                    <span>¥{cashSales.toLocaleString()}</span>
+                  </div>
+                  <div className="flex justify-between font-semibold text-gray-800 pt-1 border-t border-gray-200">
+                    <span>レジ内合計</span>
+                    <span>¥{registerCash.toLocaleString()}</span>
+                  </div>
+                </div>
+              </>
             )}
 
             <Separator />

@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { ClosingSection } from './ClosingSection'
+import { DashboardBanners } from './DashboardBanners'
 
 export default async function AdminDashboard() {
   const supabase = await createClient()
@@ -11,7 +11,7 @@ export default async function AdminDashboard() {
   const todayJST = jstNow.toISOString().slice(0, 10) // 'YYYY-MM-DD'
   const todayISO = new Date(todayJST + 'T00:00:00+09:00').toISOString()
 
-  const [todayOrdersResult, totalOrdersResult, paymentMethodsResult, todayClosingResult] =
+  const [todayOrdersResult, totalOrdersResult, paymentMethodsResult, todayClosingResult, todayOpeningResult] =
     await Promise.all([
       supabase
         .from('orders')
@@ -23,6 +23,7 @@ export default async function AdminDashboard() {
         .eq('status', 'completed'),
       supabase.from('payment_methods').select('key, name').order('sort_order'),
       supabase.from('daily_closings').select('*').eq('date', todayJST).maybeSingle(),
+      supabase.from('daily_openings').select('*').eq('date', todayJST).maybeSingle(),
     ])
 
   const todayOrders = todayOrdersResult.data ?? []
@@ -35,6 +36,7 @@ export default async function AdminDashboard() {
   const totalCount = totalOrdersResult.count ?? 0
   const paymentMethods = paymentMethodsResult.data ?? []
   const todayClosing = todayClosingResult.data ?? null
+  const todayOpening = todayOpeningResult.data ?? null
 
   // 本日の支払方法別内訳
   const paymentBreakdown: Record<string, number> = {}
@@ -84,9 +86,12 @@ export default async function AdminDashboard() {
     <div className="p-6 space-y-6">
       <h2 className="text-2xl font-bold text-gray-800">ダッシュボード</h2>
 
-      {/* 営業締めバナー */}
-      <ClosingSection
+      {/* 開店・営業締めバナー */}
+      <DashboardBanners
         todayDate={todayJST}
+        isOpened={!!todayOpening}
+        openedAt={todayOpening?.opened_at ?? null}
+        openingCash={todayOpening?.opening_cash ?? 0}
         isClosed={!!todayClosing}
         closedAt={todayClosing?.closed_at ?? null}
         todaySales={todaySales}

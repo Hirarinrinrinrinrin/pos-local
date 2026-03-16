@@ -73,6 +73,15 @@ export interface DailySummary {
   order_count: number
 }
 
+export interface DailyOpening {
+  id: string
+  date: string  // 'YYYY-MM-DD'
+  opening_cash: number
+  opened_by: string | null
+  note: string | null
+  opened_at: string
+}
+
 export interface DailyClosing {
   id: string
   date: string  // 'YYYY-MM-DD'

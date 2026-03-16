@@ -64,6 +64,16 @@ CREATE TABLE IF NOT EXISTS order_items (
   quantity INTEGER NOT NULL CHECK (quantity > 0)
 );
 
+-- 日次開店処理
+CREATE TABLE IF NOT EXISTS daily_openings (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  date DATE NOT NULL UNIQUE,
+  opening_cash INTEGER NOT NULL DEFAULT 0,
+  opened_by UUID REFERENCES staff(id) ON DELETE SET NULL,
+  note TEXT,
+  opened_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 -- 日次営業締め
 CREATE TABLE IF NOT EXISTS daily_closings (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -82,6 +92,7 @@ CREATE TABLE IF NOT EXISTS daily_closings (
 -- インデックス
 -- =============================================
 CREATE INDEX IF NOT EXISTS idx_payment_methods_key ON payment_methods(key);
+CREATE INDEX IF NOT EXISTS idx_daily_openings_date ON daily_openings(date);
 CREATE INDEX IF NOT EXISTS idx_daily_closings_date ON daily_closings(date);
 CREATE INDEX IF NOT EXISTS idx_products_category ON products(category_id);
 CREATE INDEX IF NOT EXISTS idx_products_active ON products(is_active);
@@ -97,6 +108,7 @@ ALTER TABLE products ENABLE ROW LEVEL SECURITY;
 ALTER TABLE staff ENABLE ROW LEVEL SECURITY;
 ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE order_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE daily_openings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE daily_closings ENABLE ROW LEVEL SECURITY;
 
 -- 認証済みユーザーは全テーブル参照可能
@@ -130,6 +142,15 @@ CREATE POLICY "Authenticated users can insert orders"
 
 CREATE POLICY "Authenticated users can insert order_items"
   ON order_items FOR INSERT TO authenticated WITH CHECK (true);
+
+CREATE POLICY "Authenticated users can read daily_openings"
+  ON daily_openings FOR SELECT TO authenticated USING (true);
+
+CREATE POLICY "Admin can manage daily_openings"
+  ON daily_openings FOR ALL TO authenticated
+  USING (
+    EXISTS (SELECT 1 FROM staff WHERE id = auth.uid() AND role = 'admin')
+  );
 
 CREATE POLICY "Authenticated users can read daily_closings"
   ON daily_closings FOR SELECT TO authenticated USING (true);
