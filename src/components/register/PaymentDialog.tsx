@@ -104,12 +104,13 @@ export function PaymentDialog({ open, onClose, onComplete, paymentMethods }: Pay
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className={requiresAmountInput ? 'max-w-sm' : 'max-w-md'}>
-        <DialogHeader>
+      <DialogContent className={`flex flex-col max-h-[95vh] ${requiresAmountInput ? 'max-w-sm' : 'max-w-md'}`}>
+        <DialogHeader className="shrink-0">
           <DialogTitle className="text-xl">お会計</DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-4">
+        {/* スクロール可能エリア */}
+        <div className="overflow-y-auto flex-1 space-y-4 pr-1">
           {/* 合計金額 */}
           <div className="text-center py-3 bg-gray-50 rounded-xl">
             <p className="text-sm text-gray-500">合計金額</p>
@@ -173,26 +174,26 @@ export function PaymentDialog({ open, onClose, onComplete, paymentMethods }: Pay
                 <div className={`flex justify-between text-lg font-bold rounded-xl p-3 ${
                   change >= 0 ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'
                 }`}>
-                  <span>お釣り</span>
-                  <span>¥{change >= 0 ? change.toLocaleString() : '不足'}</span>
+                  <span>{change >= 0 ? 'お釣り' : '不足'}</span>
+                  <span>¥{Math.abs(change).toLocaleString()}</span>
                 </div>
               )}
             </div>
           )}
+        </div>
 
-          {/* ボタン */}
-          <div className="flex gap-3 pt-1">
-            <Button variant="outline" onClick={onClose} className="flex-1 h-12 touch-manipulation" disabled={loading}>
-              キャンセル
-            </Button>
-            <Button
-              onClick={handleSubmit}
-              className="flex-1 h-12 bg-blue-600 hover:bg-blue-700 font-bold touch-manipulation"
-              disabled={isConfirmDisabled}
-            >
-              {loading ? '処理中...' : '確定'}
-            </Button>
-          </div>
+        {/* 確定ボタン（常に画面内に固定） */}
+        <div className="flex gap-3 pt-3 shrink-0 border-t border-gray-100">
+          <Button variant="outline" onClick={onClose} className="flex-1 h-12 touch-manipulation" disabled={loading}>
+            キャンセル
+          </Button>
+          <Button
+            onClick={handleSubmit}
+            className="flex-1 h-12 bg-blue-600 hover:bg-blue-700 font-bold touch-manipulation"
+            disabled={isConfirmDisabled}
+          >
+            {loading ? '処理中...' : '確定'}
+          </Button>
         </div>
       </DialogContent>
     </Dialog>
