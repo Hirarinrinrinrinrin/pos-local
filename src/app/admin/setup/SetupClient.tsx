@@ -1,9 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Separator } from '@/components/ui/separator'
 import { toast } from 'sonner'
 
 // =============================================
@@ -35,6 +36,42 @@ const SAMPLE_PRODUCTS = [
 ]
 
 // =============================================
+// CSV パーサー
+// =============================================
+
+type CsvRow = {
+  name: string
+  price: number
+  categoryName: string
+  error?: string
+}
+
+function parseCSV(text: string): CsvRow[] {
+  const lines = text.trim().split(/\r?\n/)
+  if (lines.length < 2) return []
+
+  return lines
+    .slice(1)
+    .filter((line) => line.trim())
+    .map((line) => {
+      // ダブルクォート除去・カンマ分割
+      const cols = line.split(',').map((c) => c.trim().replace(/^"(.*)"$/, '$1'))
+      const [name, priceStr, categoryName] = cols
+
+      if (!name) return { name: '', price: 0, categoryName: '', error: '商品名が空です' }
+
+      const price = parseInt((priceStr ?? '').replace(/[^0-9]/g, ''))
+      if (isNaN(price) || price < 0)
+        return { name, price: 0, categoryName: categoryName?.trim() ?? '', error: '価格が不正です' }
+
+      if (!categoryName?.trim())
+        return { name, price, categoryName: '', error: 'カテゴリ名が空です' }
+
+      return { name, price, categoryName: categoryName.trim() }
+    })
+}
+
+// =============================================
 
 interface SetupClientProps {
   categoryCount: number
@@ -54,6 +91,12 @@ export function SetupClient({
   })
   const [loading, setLoading] = useState(false)
 
+  // CSV インポート用 state
+  const [csvRows, setCsvRows] = useState<CsvRow[]>([])
+  const [csvFileName, setCsvFileName] = useState('')
+  const [importing, setImporting] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
   const refreshCounts = async (supabase: ReturnType<typeof createClient>) => {
     const [catRes, prodRes, pmRes] = await Promise.all([
       supabase.from('categories').select('id', { count: 'exact', head: true }),
@@ -67,48 +110,151 @@ export function SetupClient({
     })
   }
 
-  // カテゴリ投入（名前が重複するものはスキップ）
+  // =============================================
+  // CSV ファイル選択
+  // =============================================
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setCsvFileName(file.name)
+
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      const buffer = ev.target?.result as ArrayBuffer
+      // Shift-JIS（Excel日本語デフォルト）を先に試みる
+      let text = ''
+      try {
+        const decoded = new TextDecoder('shift-jis').decode(buffer)
+        // 文字化け検出（置換文字が多い場合はUTF-8へフォールバック）
+        text = decoded.includes('\uFFFD')
+          ? new TextDecoder('utf-8').decode(buffer)
+          : decoded
+      } catch {
+        text = new TextDecoder('utf-8').decode(buffer)
+      }
+      setCsvRows(parseCSV(text))
+    }
+    reader.readAsArrayBuffer(file)
+  }
+
+  const handleClearCSV = () => {
+    setCsvRows([])
+    setCsvFileName('')
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
+  // =============================================
+  // テンプレートダウンロード
+  // =============================================
+
+  const downloadTemplate = () => {
+    const content = '商品名,価格,カテゴリ名\nコーヒー,350,ドリンク\nハンバーガー,650,フード\nチーズケーキ,400,デザート'
+    // BOM付きUTF-8でExcelでも文字化けしない
+    const blob = new Blob(['\uFEFF' + content], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = '商品インポートテンプレート.csv'
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  // =============================================
+  // CSV インポート実行
+  // =============================================
+
+  const handleImport = async () => {
+    const validRows = csvRows.filter((r) => !r.error)
+    if (validRows.length === 0) return
+
+    setImporting(true)
+    const supabase = createClient()
+
+    // 1. 不足カテゴリを自動作成
+    const uniqueCategories = [...new Set(validRows.map((r) => r.categoryName))]
+    const { data: existingCats } = await supabase.from('categories').select('id, name')
+    const catMap = Object.fromEntries((existingCats ?? []).map((c) => [c.name, c.id]))
+
+    const missingCats = uniqueCategories.filter((name) => !catMap[name])
+    if (missingCats.length > 0) {
+      const { data: newCats, error } = await supabase
+        .from('categories')
+        .insert(missingCats.map((name, i) => ({ name, sort_order: 100 + i })))
+        .select('id, name')
+      if (error) {
+        toast.error('カテゴリの作成に失敗しました')
+        setImporting(false)
+        return
+      }
+      for (const cat of newCats ?? []) catMap[cat.name] = cat.id
+    }
+
+    // 2. 既存商品名を取得（重複スキップ用）
+    const { data: existingProds } = await supabase.from('products').select('name')
+    const existingProdNames = new Set((existingProds ?? []).map((p) => p.name))
+
+    // 3. 商品を投入
+    const toInsert = validRows
+      .filter((r) => !existingProdNames.has(r.name))
+      .map((r) => ({ name: r.name, price: r.price, category_id: catMap[r.categoryName], is_active: true }))
+
+    const skipped = validRows.length - toInsert.length
+
+    if (toInsert.length === 0) {
+      toast.info(`すべての商品が登録済みです（${skipped}件スキップ）`)
+      setImporting(false)
+      return
+    }
+
+    const { error } = await supabase.from('products').insert(toInsert)
+    if (error) {
+      toast.error('商品の投入に失敗しました')
+    } else {
+      const msg = skipped > 0
+        ? `${toInsert.length}件を追加しました（${skipped}件は重複スキップ）`
+        : `${toInsert.length}件を追加しました`
+      if (missingCats.length > 0) toast.success(`カテゴリ「${missingCats.join('・')}」を自動作成しました`)
+      toast.success(msg)
+      handleClearCSV()
+      await refreshCounts(supabase)
+    }
+    setImporting(false)
+  }
+
+  // =============================================
+  // サンプルデータ投入（個別）
+  // =============================================
+
   const seedCategories = async () => {
     setLoading(true)
     const supabase = createClient()
-
     const { data: existing } = await supabase.from('categories').select('name')
     const existingNames = new Set((existing ?? []).map((c) => c.name))
     const toInsert = SAMPLE_CATEGORIES.filter((c) => !existingNames.has(c.name))
-
     if (toInsert.length === 0) {
       toast.info('サンプルカテゴリはすべて登録済みです')
     } else {
       const { error } = await supabase.from('categories').insert(toInsert)
-      if (error) {
-        toast.error('カテゴリの投入に失敗しました')
-      } else {
-        toast.success(`${toInsert.length}件のカテゴリを追加しました`)
-        await refreshCounts(supabase)
-      }
+      error ? toast.error('失敗しました') : toast.success(`${toInsert.length}件追加しました`)
+      if (!error) await refreshCounts(supabase)
     }
     setLoading(false)
   }
 
-  // 商品投入（名前が重複するものはスキップ）
   const seedProducts = async () => {
     setLoading(true)
     const supabase = createClient()
-
     const { data: categories } = await supabase.from('categories').select('id, name')
     const categoryMap = Object.fromEntries((categories ?? []).map((c) => [c.name, c.id]))
-
-    const missingCategories = [...new Set(SAMPLE_PRODUCTS.map((p) => p.categoryName))].filter(
+    const missingCats = [...new Set(SAMPLE_PRODUCTS.map((p) => p.categoryName))].filter(
       (name) => !categoryMap[name]
     )
-    if (missingCategories.length > 0) {
-      toast.error(
-        `カテゴリが不足しています: ${missingCategories.join(', ')}。先にカテゴリを投入してください`
-      )
+    if (missingCats.length > 0) {
+      toast.error(`カテゴリが不足しています: ${missingCats.join(', ')}`)
       setLoading(false)
       return
     }
-
     const { data: existing } = await supabase.from('products').select('name')
     const existingNames = new Set((existing ?? []).map((p) => p.name))
     const toInsert = SAMPLE_PRODUCTS.filter((p) => !existingNames.has(p.name)).map((p) => ({
@@ -117,170 +263,231 @@ export function SetupClient({
       category_id: categoryMap[p.categoryName],
       is_active: true,
     }))
-
     if (toInsert.length === 0) {
       toast.info('サンプル商品はすべて登録済みです')
     } else {
       const { error } = await supabase.from('products').insert(toInsert)
-      if (error) {
-        toast.error('商品の投入に失敗しました')
-      } else {
-        toast.success(`${toInsert.length}件の商品を追加しました`)
-        await refreshCounts(supabase)
-      }
+      error ? toast.error('失敗しました') : toast.success(`${toInsert.length}件追加しました`)
+      if (!error) await refreshCounts(supabase)
     }
     setLoading(false)
   }
 
-  // 支払方法投入（key で upsert）
   const seedPaymentMethods = async () => {
     setLoading(true)
     const supabase = createClient()
-
     const { error } = await supabase
       .from('payment_methods')
       .upsert(SAMPLE_PAYMENT_METHODS, { onConflict: 'key' })
-
-    if (error) {
-      toast.error('支払方法の投入に失敗しました')
-    } else {
-      toast.success('支払方法を設定しました')
-      await refreshCounts(supabase)
-    }
+    error ? toast.error('失敗しました') : toast.success('支払方法を設定しました')
+    if (!error) await refreshCounts(supabase)
     setLoading(false)
   }
 
-  // 全て一括投入
   const seedAll = async () => {
     setLoading(true)
     const supabase = createClient()
-
-    // 1. カテゴリ
     const { data: existingCats } = await supabase.from('categories').select('name')
     const existingCatNames = new Set((existingCats ?? []).map((c) => c.name))
     const catsToInsert = SAMPLE_CATEGORIES.filter((c) => !existingCatNames.has(c.name))
-    if (catsToInsert.length > 0) {
-      await supabase.from('categories').insert(catsToInsert)
-    }
+    if (catsToInsert.length > 0) await supabase.from('categories').insert(catsToInsert)
 
-    // 2. 商品
     const { data: categories } = await supabase.from('categories').select('id, name')
     const categoryMap = Object.fromEntries((categories ?? []).map((c) => [c.name, c.id]))
     const { data: existingProds } = await supabase.from('products').select('name')
     const existingProdNames = new Set((existingProds ?? []).map((p) => p.name))
     const prodsToInsert = SAMPLE_PRODUCTS.filter(
       (p) => !existingProdNames.has(p.name) && categoryMap[p.categoryName]
-    ).map((p) => ({
-      name: p.name,
-      price: p.price,
-      category_id: categoryMap[p.categoryName],
-      is_active: true,
-    }))
-    if (prodsToInsert.length > 0) {
-      await supabase.from('products').insert(prodsToInsert)
-    }
+    ).map((p) => ({ name: p.name, price: p.price, category_id: categoryMap[p.categoryName], is_active: true }))
+    if (prodsToInsert.length > 0) await supabase.from('products').insert(prodsToInsert)
 
-    // 3. 支払方法（upsert）
     await supabase.from('payment_methods').upsert(SAMPLE_PAYMENT_METHODS, { onConflict: 'key' })
-
     toast.success('サンプルデータを一括投入しました')
     await refreshCounts(supabase)
     setLoading(false)
   }
 
+  // =============================================
+  // レンダリング
+  // =============================================
+
+  const validCount = csvRows.filter((r) => !r.error).length
+  const errorCount = csvRows.filter((r) => r.error).length
+
   return (
     <div className="p-6 space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-gray-800">マスタデータ初期化</h2>
-        <p className="text-sm text-gray-500 mt-1">
-          初期セットアップ用のサンプルデータを投入します。既存データと重複する名前は自動的にスキップされます。
-        </p>
+        <h2 className="text-2xl font-bold text-gray-800">初期設定</h2>
+        <p className="text-sm text-gray-500 mt-1">商品CSVの一括インポートとサンプルデータの投入ができます。</p>
       </div>
 
-      <div className="grid gap-4">
-        {/* カテゴリ */}
-        <Card>
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-base">カテゴリ</CardTitle>
-              <span className="text-sm text-gray-500">現在 {counts.categories}件</span>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="flex flex-wrap gap-2">
-              {SAMPLE_CATEGORIES.map((c) => (
-                <span key={c.name} className="px-2 py-1 bg-gray-100 rounded text-xs text-gray-600">
-                  {c.name}
-                </span>
-              ))}
-            </div>
-            <Button onClick={seedCategories} disabled={loading} variant="outline" size="sm">
-              サンプルを投入
-            </Button>
-          </CardContent>
-        </Card>
+      {/* ===== CSVインポート ===== */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">商品CSVインポート</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* フォーマット説明 */}
+          <div className="bg-gray-50 rounded-lg p-3 text-xs text-gray-500 space-y-1">
+            <p className="font-medium text-gray-700">CSVフォーマット（1行目はヘッダー）</p>
+            <pre className="font-mono">商品名,価格,カテゴリ名{'\n'}コーヒー,350,ドリンク{'\n'}ハンバーガー,650,フード</pre>
+            <p>・ExcelのCSV（Shift-JIS）・UTF-8 どちらも対応</p>
+            <p>・カテゴリが未登録の場合は自動で作成します</p>
+            <p>・既存の商品名と重複する行はスキップされます</p>
+          </div>
 
-        {/* 商品 */}
-        <Card>
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-base">商品</CardTitle>
-              <span className="text-sm text-gray-500">現在 {counts.products}件</span>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="flex flex-wrap gap-2">
-              {SAMPLE_PRODUCTS.map((p) => (
-                <span key={p.name} className="px-2 py-1 bg-gray-100 rounded text-xs text-gray-600">
-                  {p.name}　¥{p.price.toLocaleString()}
-                </span>
-              ))}
-            </div>
-            <p className="text-xs text-amber-600">※ カテゴリが先に登録されている必要があります</p>
-            <Button onClick={seedProducts} disabled={loading} variant="outline" size="sm">
-              サンプルを投入
+          {/* テンプレートDL + ファイル選択 */}
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" size="sm" onClick={downloadTemplate}>
+              テンプレートをダウンロード
             </Button>
-          </CardContent>
-        </Card>
-
-        {/* 支払方法 */}
-        <Card>
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-base">支払方法</CardTitle>
-              <span className="text-sm text-gray-500">現在 {counts.paymentMethods}件</span>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="flex flex-wrap gap-2">
-              {SAMPLE_PAYMENT_METHODS.map((m) => (
-                <span key={m.key} className="px-2 py-1 bg-gray-100 rounded text-xs text-gray-600">
-                  {m.name}
-                </span>
-              ))}
-            </div>
-            <p className="text-xs text-gray-400">
-              ※ 既存の支払方法は名称・設定が上書きされます（key一致時）
-            </p>
-            <Button onClick={seedPaymentMethods} disabled={loading} variant="outline" size="sm">
-              サンプルを投入
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              CSVファイルを選択
             </Button>
-          </CardContent>
-        </Card>
-      </div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".csv"
+              className="hidden"
+              onChange={handleFileChange}
+            />
+          </div>
 
-      {/* 全て一括投入 */}
-      <div className="pt-2 space-y-2">
-        <Button
-          onClick={seedAll}
-          disabled={loading}
-          className="w-full h-12 bg-blue-600 hover:bg-blue-700 font-semibold"
-        >
-          {loading ? '投入中...' : '全サンプルデータを一括投入'}
-        </Button>
-        <p className="text-xs text-gray-400 text-center">
-          カテゴリ・商品・支払方法をまとめて投入します。重複はスキップされます。
-        </p>
+          {/* ファイル名 + クリア */}
+          {csvFileName && (
+            <div className="flex items-center gap-2 text-sm text-gray-600">
+              <span className="font-medium">{csvFileName}</span>
+              <span className="text-gray-400">
+                （有効 {validCount}件{errorCount > 0 ? `・エラー ${errorCount}件` : ''}）
+              </span>
+              <button onClick={handleClearCSV} className="text-xs text-gray-400 hover:text-gray-600 underline">
+                クリア
+              </button>
+            </div>
+          )}
+
+          {/* プレビューテーブル */}
+          {csvRows.length > 0 && (
+            <div className="border rounded-lg overflow-hidden">
+              <table className="w-full text-xs">
+                <thead className="bg-gray-50">
+                  <tr className="text-left text-gray-500">
+                    <th className="px-3 py-2 font-medium">商品名</th>
+                    <th className="px-3 py-2 font-medium text-right">価格</th>
+                    <th className="px-3 py-2 font-medium">カテゴリ</th>
+                    <th className="px-3 py-2 font-medium">状態</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {csvRows.map((row, i) => (
+                    <tr key={i} className={row.error ? 'bg-red-50' : ''}>
+                      <td className="px-3 py-1.5 text-gray-800">{row.name || '—'}</td>
+                      <td className="px-3 py-1.5 text-right text-gray-600">
+                        {row.error ? '—' : `¥${row.price.toLocaleString()}`}
+                      </td>
+                      <td className="px-3 py-1.5 text-gray-600">{row.categoryName || '—'}</td>
+                      <td className="px-3 py-1.5">
+                        {row.error ? (
+                          <span className="text-red-500">{row.error}</span>
+                        ) : (
+                          <span className="text-green-600">OK</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* インポートボタン */}
+          {validCount > 0 && (
+            <Button
+              onClick={handleImport}
+              disabled={importing}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              {importing ? '投入中...' : `${validCount}件をインポートする`}
+            </Button>
+          )}
+        </CardContent>
+      </Card>
+
+      <Separator />
+
+      {/* ===== サンプルデータ ===== */}
+      <div>
+        <h3 className="text-sm font-semibold text-gray-500 mb-3">サンプルデータ投入（テスト・デモ用）</h3>
+        <div className="grid gap-4">
+          {/* カテゴリ */}
+          <Card>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base">カテゴリ</CardTitle>
+                <span className="text-sm text-gray-500">現在 {counts.categories}件</span>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex flex-wrap gap-2">
+                {SAMPLE_CATEGORIES.map((c) => (
+                  <span key={c.name} className="px-2 py-1 bg-gray-100 rounded text-xs text-gray-600">{c.name}</span>
+                ))}
+              </div>
+              <Button onClick={seedCategories} disabled={loading} variant="outline" size="sm">サンプルを投入</Button>
+            </CardContent>
+          </Card>
+
+          {/* 商品 */}
+          <Card>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base">商品</CardTitle>
+                <span className="text-sm text-gray-500">現在 {counts.products}件</span>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex flex-wrap gap-2">
+                {SAMPLE_PRODUCTS.map((p) => (
+                  <span key={p.name} className="px-2 py-1 bg-gray-100 rounded text-xs text-gray-600">
+                    {p.name}　¥{p.price.toLocaleString()}
+                  </span>
+                ))}
+              </div>
+              <p className="text-xs text-amber-600">※ カテゴリが先に登録されている必要があります</p>
+              <Button onClick={seedProducts} disabled={loading} variant="outline" size="sm">サンプルを投入</Button>
+            </CardContent>
+          </Card>
+
+          {/* 支払方法 */}
+          <Card>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base">支払方法</CardTitle>
+                <span className="text-sm text-gray-500">現在 {counts.paymentMethods}件</span>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex flex-wrap gap-2">
+                {SAMPLE_PAYMENT_METHODS.map((m) => (
+                  <span key={m.key} className="px-2 py-1 bg-gray-100 rounded text-xs text-gray-600">{m.name}</span>
+                ))}
+              </div>
+              <p className="text-xs text-gray-400">※ 既存の支払方法はkeyが一致する場合上書きされます</p>
+              <Button onClick={seedPaymentMethods} disabled={loading} variant="outline" size="sm">サンプルを投入</Button>
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="pt-4 space-y-2">
+          <Button onClick={seedAll} disabled={loading} className="w-full h-12 bg-blue-600 hover:bg-blue-700 font-semibold">
+            {loading ? '投入中...' : '全サンプルデータを一括投入'}
+          </Button>
+          <p className="text-xs text-gray-400 text-center">重複はスキップされます</p>
+        </div>
       </div>
     </div>
   )
