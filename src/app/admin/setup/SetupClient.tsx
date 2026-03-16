@@ -72,6 +72,50 @@ function parseCSV(text: string): CsvRow[] {
 }
 
 // =============================================
+// 支払方法 CSV パーサー
+// =============================================
+
+const PM_TYPE_LABELS = ['確定金額', '金額入力', '現金'] as const
+
+type PmCsvRow = {
+  name: string
+  key: string
+  typeLabel: string
+  sortOrder: number
+  requires_amount_input: boolean
+  requires_change: boolean
+  error?: string
+}
+
+function typeToFlags(label: string): { requires_amount_input: boolean; requires_change: boolean } {
+  if (label === '現金' || label === 'cash') return { requires_amount_input: true, requires_change: true }
+  if (label === '金額入力' || label === 'amount') return { requires_amount_input: true, requires_change: false }
+  return { requires_amount_input: false, requires_change: false }
+}
+
+function parsePmCSV(text: string): PmCsvRow[] {
+  const lines = text.trim().split(/\r?\n/)
+  if (lines.length < 2) return []
+
+  return lines
+    .slice(1)
+    .filter((line) => line.trim())
+    .map((line) => {
+      const cols = line.split(',').map((c) => c.trim().replace(/^"(.*)"$/, '$1'))
+      const [name, key, typeLabel, sortOrderStr] = cols
+
+      if (!name) return { name: '', key: '', typeLabel: '', sortOrder: 0, requires_amount_input: false, requires_change: false, error: '支払方法名が空です' }
+      if (!key) return { name, key: '', typeLabel: '', sortOrder: 0, requires_amount_input: false, requires_change: false, error: '識別子が空です' }
+      if (!/^[a-zA-Z0-9_]+$/.test(key)) return { name, key, typeLabel: '', sortOrder: 0, requires_amount_input: false, requires_change: false, error: '識別子は英数字・アンダースコアのみ' }
+      if (!typeLabel || !(['確定金額', '金額入力', '現金', 'exact', 'amount', 'cash'].includes(typeLabel)))
+        return { name, key, typeLabel: typeLabel ?? '', sortOrder: 0, requires_amount_input: false, requires_change: false, error: `タイプが不正です（${PM_TYPE_LABELS.join('/')}）` }
+
+      const sortOrder = parseInt(sortOrderStr ?? '0') || 0
+      return { name, key, typeLabel, sortOrder, ...typeToFlags(typeLabel) }
+    })
+}
+
+// =============================================
 
 interface SetupClientProps {
   categoryCount: number
@@ -91,11 +135,17 @@ export function SetupClient({
   })
   const [loading, setLoading] = useState(false)
 
-  // CSV インポート用 state
+  // 商品 CSV インポート用 state
   const [csvRows, setCsvRows] = useState<CsvRow[]>([])
   const [csvFileName, setCsvFileName] = useState('')
   const [importing, setImporting] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // 支払方法 CSV インポート用 state
+  const [pmCsvRows, setPmCsvRows] = useState<PmCsvRow[]>([])
+  const [pmCsvFileName, setPmCsvFileName] = useState('')
+  const [pmImporting, setPmImporting] = useState(false)
+  const pmFileInputRef = useRef<HTMLInputElement>(null)
 
   const refreshCounts = async (supabase: ReturnType<typeof createClient>) => {
     const [catRes, prodRes, pmRes] = await Promise.all([
@@ -223,6 +273,83 @@ export function SetupClient({
   }
 
   // =============================================
+  // 支払方法 CSV ファイル選択・テンプレート・インポート
+  // =============================================
+
+  const handlePmFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setPmCsvFileName(file.name)
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      const buffer = ev.target?.result as ArrayBuffer
+      let text = ''
+      try {
+        const decoded = new TextDecoder('shift-jis').decode(buffer)
+        text = decoded.includes('\uFFFD') ? new TextDecoder('utf-8').decode(buffer) : decoded
+      } catch {
+        text = new TextDecoder('utf-8').decode(buffer)
+      }
+      setPmCsvRows(parsePmCSV(text))
+    }
+    reader.readAsArrayBuffer(file)
+  }
+
+  const handleClearPmCSV = () => {
+    setPmCsvRows([])
+    setPmCsvFileName('')
+    if (pmFileInputRef.current) pmFileInputRef.current.value = ''
+  }
+
+  const downloadPmTemplate = () => {
+    const content = [
+      '支払方法名,識別子,タイプ,表示順',
+      '現金,cash,現金,1',
+      'カード,card,確定金額,2',
+      '電子マネー,emoney,確定金額,3',
+      'QRコード決済,qr,確定金額,4',
+      '後払い,deferred,金額入力,5',
+    ].join('\n')
+    const blob = new Blob(['\uFEFF' + content], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = '支払方法インポートテンプレート.csv'
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const handlePmImport = async () => {
+    const validRows = pmCsvRows.filter((r) => !r.error)
+    if (validRows.length === 0) return
+
+    setPmImporting(true)
+    const supabase = createClient()
+
+    const toUpsert = validRows.map((r) => ({
+      name: r.name,
+      key: r.key,
+      requires_amount_input: r.requires_amount_input,
+      requires_change: r.requires_change,
+      sort_order: r.sortOrder,
+      is_active: true,
+    }))
+
+    const { error } = await supabase
+      .from('payment_methods')
+      .upsert(toUpsert, { onConflict: 'key' })
+
+    if (error) {
+      toast.error('支払方法の投入に失敗しました')
+    } else {
+      toast.success(`${toUpsert.length}件の支払方法を設定しました（既存は上書き）`)
+      handleClearPmCSV()
+      await refreshCounts(supabase)
+    }
+    setPmImporting(false)
+  }
+
+  // =============================================
   // サンプルデータ投入（個別）
   // =============================================
 
@@ -313,6 +440,8 @@ export function SetupClient({
 
   const validCount = csvRows.filter((r) => !r.error).length
   const errorCount = csvRows.filter((r) => r.error).length
+  const pmValidCount = pmCsvRows.filter((r) => !r.error).length
+  const pmErrorCount = pmCsvRows.filter((r) => r.error).length
 
   return (
     <div className="p-6 space-y-6">
@@ -412,6 +541,94 @@ export function SetupClient({
               className="bg-blue-600 hover:bg-blue-700"
             >
               {importing ? '投入中...' : `${validCount}件をインポートする`}
+            </Button>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* ===== 支払方法CSVインポート ===== */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">支払方法CSVインポート</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* フォーマット説明 */}
+          <div className="bg-gray-50 rounded-lg p-3 text-xs text-gray-500 space-y-1">
+            <p className="font-medium text-gray-700">CSVフォーマット（1行目はヘッダー）</p>
+            <pre className="font-mono">{'支払方法名,識別子,タイプ,表示順\n現金,cash,現金,1\nカード,card,確定金額,2'}</pre>
+            <p>・タイプ：<strong className="text-gray-700">確定金額</strong>（カード等）／<strong className="text-gray-700">金額入力</strong>（お釣りなし）／<strong className="text-gray-700">現金</strong>（お釣りあり）</p>
+            <p>・識別子は英数字・アンダースコアのみ（例: cash, card, paypay）</p>
+            <p>・識別子が一致する既存データは<strong className="text-gray-700">上書き更新</strong>されます</p>
+          </div>
+
+          {/* テンプレートDL + ファイル選択 */}
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" size="sm" onClick={downloadPmTemplate}>
+              テンプレートをダウンロード
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => pmFileInputRef.current?.click()}>
+              CSVファイルを選択
+            </Button>
+            <input
+              ref={pmFileInputRef}
+              type="file"
+              accept=".csv"
+              className="hidden"
+              onChange={handlePmFileChange}
+            />
+          </div>
+
+          {/* ファイル名 + クリア */}
+          {pmCsvFileName && (
+            <div className="flex items-center gap-2 text-sm text-gray-600">
+              <span className="font-medium">{pmCsvFileName}</span>
+              <span className="text-gray-400">
+                （有効 {pmValidCount}件{pmErrorCount > 0 ? `・エラー ${pmErrorCount}件` : ''}）
+              </span>
+              <button onClick={handleClearPmCSV} className="text-xs text-gray-400 hover:text-gray-600 underline">
+                クリア
+              </button>
+            </div>
+          )}
+
+          {/* プレビューテーブル */}
+          {pmCsvRows.length > 0 && (
+            <div className="border rounded-lg overflow-hidden">
+              <table className="w-full text-xs">
+                <thead className="bg-gray-50">
+                  <tr className="text-left text-gray-500">
+                    <th className="px-3 py-2 font-medium">支払方法名</th>
+                    <th className="px-3 py-2 font-medium">識別子</th>
+                    <th className="px-3 py-2 font-medium">タイプ</th>
+                    <th className="px-3 py-2 font-medium text-right">表示順</th>
+                    <th className="px-3 py-2 font-medium">状態</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {pmCsvRows.map((row, i) => (
+                    <tr key={i} className={row.error ? 'bg-red-50' : ''}>
+                      <td className="px-3 py-1.5 text-gray-800">{row.name || '—'}</td>
+                      <td className="px-3 py-1.5 text-gray-500 font-mono">{row.key || '—'}</td>
+                      <td className="px-3 py-1.5 text-gray-600">{row.error ? '—' : row.typeLabel}</td>
+                      <td className="px-3 py-1.5 text-right text-gray-500">{row.error ? '—' : row.sortOrder}</td>
+                      <td className="px-3 py-1.5">
+                        {row.error ? (
+                          <span className="text-red-500">{row.error}</span>
+                        ) : (
+                          <span className="text-green-600">OK</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* インポートボタン */}
+          {pmValidCount > 0 && (
+            <Button onClick={handlePmImport} disabled={pmImporting} className="bg-blue-600 hover:bg-blue-700">
+              {pmImporting ? '投入中...' : `${pmValidCount}件をインポートする`}
             </Button>
           )}
         </CardContent>
