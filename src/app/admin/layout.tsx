@@ -28,6 +28,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     { href: '/admin/orders', label: '注文履歴' },
     { href: '/admin/closings', label: '営業締め履歴' },
     { href: '/admin/staff', label: 'スタッフ' },
+    { href: '/admin/setup', label: '初期設定' },
   ]
 
   return (
