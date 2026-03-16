@@ -84,6 +84,7 @@ CREATE TABLE IF NOT EXISTS daily_closings (
   refund_count INTEGER NOT NULL DEFAULT 0,
   refund_total INTEGER NOT NULL DEFAULT 0,
   payment_breakdown JSONB NOT NULL DEFAULT '{}',
+  closing_denomination_breakdown JSONB NOT NULL DEFAULT '{}',  -- 締め時の金種内訳
   closed_by UUID REFERENCES staff(id) ON DELETE SET NULL,
   note TEXT,
   closed_at TIMESTAMPTZ NOT NULL DEFAULT now()

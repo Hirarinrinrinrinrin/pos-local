@@ -91,6 +91,7 @@ export interface DailyClosing {
   refund_count: number
   refund_total: number
   payment_breakdown: Record<string, number>
+  closing_denomination_breakdown: Record<string, number>  // 締め時の金種内訳
   closed_by: string | null
   note: string | null
   closed_at: string
