@@ -4,6 +4,7 @@ import { useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Separator } from '@/components/ui/separator'
 import { toast } from 'sonner'
 
@@ -134,6 +135,12 @@ export function SetupClient({
     paymentMethods: initPmCount,
   })
   const [loading, setLoading] = useState(false)
+
+  // データリセット用 state
+  const [resetDialogOpen, setResetDialogOpen] = useState(false)
+  const [resetType, setResetType] = useState<'orders' | 'all' | null>(null)
+  const [resetConfirmText, setResetConfirmText] = useState('')
+  const [resetting, setResetting] = useState(false)
 
   // 商品 CSV インポート用 state
   const [csvRows, setCsvRows] = useState<CsvRow[]>([])
@@ -409,6 +416,33 @@ export function SetupClient({
     error ? toast.error('失敗しました') : toast.success('支払方法を設定しました')
     if (!error) await refreshCounts(supabase)
     setLoading(false)
+  }
+
+  // =============================================
+  // データリセット
+  // =============================================
+
+  const openResetDialog = (type: 'orders' | 'all') => {
+    setResetType(type)
+    setResetConfirmText('')
+    setResetDialogOpen(true)
+  }
+
+  const handleReset = async () => {
+    if (resetConfirmText !== 'リセット') return
+    setResetting(true)
+    const supabase = createClient()
+    const fnName = resetType === 'all' ? 'reset_all_data' : 'reset_order_data'
+    const { error } = await supabase.rpc(fnName)
+    setResetting(false)
+    if (error) {
+      toast.error('リセットに失敗しました: ' + error.message)
+    } else {
+      const msg = resetType === 'all' ? '全データをリセットしました' : '注文データをリセットしました'
+      toast.success(msg)
+      setResetDialogOpen(false)
+      if (resetType === 'all') await refreshCounts(supabase)
+    }
   }
 
   const seedAll = async () => {
@@ -706,6 +740,114 @@ export function SetupClient({
           <p className="text-xs text-gray-400 text-center">重複はスキップされます</p>
         </div>
       </div>
+
+      <Separator />
+
+      {/* ===== データリセット ===== */}
+      <div>
+        <h3 className="text-sm font-semibold text-red-500 mb-1">データリセット</h3>
+        <p className="text-xs text-gray-400 mb-4">削除したデータは復元できません。必ずバックアップを取ってから実行してください。</p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Card className="border-red-200">
+            <CardContent className="pt-5 space-y-3">
+              <div>
+                <p className="font-semibold text-sm text-gray-800">注文データをリセット</p>
+                <p className="text-xs text-gray-400 mt-1 leading-relaxed">
+                  注文履歴・開店履歴・締め履歴を削除します。<br />
+                  商品・カテゴリ・支払方法は残ります。
+                </p>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-red-300 text-red-600 hover:bg-red-50 hover:border-red-400 w-full"
+                onClick={() => openResetDialog('orders')}
+              >
+                注文データを削除する
+              </Button>
+            </CardContent>
+          </Card>
+
+          <Card className="border-red-300 bg-red-50/30">
+            <CardContent className="pt-5 space-y-3">
+              <div>
+                <p className="font-semibold text-sm text-red-700">全データをリセット</p>
+                <p className="text-xs text-gray-400 mt-1 leading-relaxed">
+                  注文履歴に加え、商品・カテゴリ・<br />
+                  支払方法もすべて削除します。
+                </p>
+              </div>
+              <Button
+                size="sm"
+                className="bg-red-600 hover:bg-red-700 text-white w-full"
+                onClick={() => openResetDialog('all')}
+              >
+                全データを削除する
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+
+      {/* ===== リセット確認ダイアログ ===== */}
+      <Dialog open={resetDialogOpen} onOpenChange={setResetDialogOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-red-600">
+              {resetType === 'all' ? '全データをリセット' : '注文データをリセット'}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 text-sm">
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-xs text-red-700 space-y-1">
+              <p className="font-semibold">削除対象</p>
+              <ul className="space-y-0.5 list-disc list-inside text-red-600">
+                <li>注文履歴（order_items / orders）</li>
+                <li>開店履歴（daily_openings）</li>
+                <li>営業締め履歴（daily_closings）</li>
+                {resetType === 'all' && (
+                  <>
+                    <li>商品（products）</li>
+                    <li>カテゴリ（categories）</li>
+                    <li>支払方法（payment_methods）</li>
+                  </>
+                )}
+              </ul>
+              <p className="pt-1 font-semibold text-red-700">この操作は取り消せません。</p>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs text-gray-500 font-medium">
+                確認のため <span className="font-bold text-gray-800">リセット</span> と入力してください
+              </label>
+              <input
+                type="text"
+                value={resetConfirmText}
+                onChange={(e) => setResetConfirmText(e.target.value)}
+                placeholder="リセット"
+                className="w-full border border-input rounded-lg px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              />
+            </div>
+
+            <div className="flex gap-3">
+              <Button
+                variant="outline"
+                onClick={() => setResetDialogOpen(false)}
+                className="flex-1"
+                disabled={resetting}
+              >
+                キャンセル
+              </Button>
+              <Button
+                onClick={handleReset}
+                className="flex-1 bg-red-600 hover:bg-red-700"
+                disabled={resetting || resetConfirmText !== 'リセット'}
+              >
+                {resetting ? '削除中...' : '実行する'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
