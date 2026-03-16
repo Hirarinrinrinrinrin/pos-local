@@ -18,10 +18,11 @@ BEGIN
     RAISE EXCEPTION 'Permission denied: admin role required';
   END IF;
 
-  DELETE FROM order_items;
-  DELETE FROM orders;
-  DELETE FROM daily_openings;
-  DELETE FROM daily_closings;
+  -- Supabase の安全機能回避のため WHERE id IS NOT NULL を付与（全件削除と同義）
+  DELETE FROM order_items   WHERE id IS NOT NULL;
+  DELETE FROM orders        WHERE id IS NOT NULL;
+  DELETE FROM daily_openings WHERE id IS NOT NULL;
+  DELETE FROM daily_closings WHERE id IS NOT NULL;
 END;
 $$;
 
@@ -40,16 +41,16 @@ BEGIN
     RAISE EXCEPTION 'Permission denied: admin role required';
   END IF;
 
-  -- 注文データ（order_itemsはordersのCASCADEで連動）
-  DELETE FROM order_items;
-  DELETE FROM orders;
-  DELETE FROM daily_openings;
-  DELETE FROM daily_closings;
+  -- 注文データ
+  DELETE FROM order_items    WHERE id IS NOT NULL;
+  DELETE FROM orders         WHERE id IS NOT NULL;
+  DELETE FROM daily_openings  WHERE id IS NOT NULL;
+  DELETE FROM daily_closings  WHERE id IS NOT NULL;
 
   -- マスタデータ（products → categories の順で削除）
-  DELETE FROM products;
-  DELETE FROM categories;
-  DELETE FROM payment_methods;
+  DELETE FROM products        WHERE id IS NOT NULL;
+  DELETE FROM categories      WHERE id IS NOT NULL;
+  DELETE FROM payment_methods WHERE id IS NOT NULL;
 END;
 $$;
 
