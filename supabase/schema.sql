@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS staff (
   id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
   role TEXT NOT NULL CHECK (role IN ('admin', 'cashier')) DEFAULT 'cashier',
+  email TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -177,7 +178,45 @@ CREATE POLICY "Admin can manage products"
   );
 
 -- =============================================
--- サンプルデータ
+-- データリセット用 RPC 関数
+-- =============================================
+
+-- 注文データリセット（営業データのみ）
+CREATE OR REPLACE FUNCTION reset_order_data()
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM staff WHERE id = auth.uid() AND role = 'admin') THEN
+    RAISE EXCEPTION 'Permission denied: admin role required';
+  END IF;
+  DELETE FROM order_items    WHERE id IS NOT NULL;
+  DELETE FROM orders         WHERE id IS NOT NULL;
+  DELETE FROM daily_openings WHERE id IS NOT NULL;
+  DELETE FROM daily_closings WHERE id IS NOT NULL;
+END;
+$$;
+
+-- 全データリセット（マスタデータも含む）
+CREATE OR REPLACE FUNCTION reset_all_data()
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM staff WHERE id = auth.uid() AND role = 'admin') THEN
+    RAISE EXCEPTION 'Permission denied: admin role required';
+  END IF;
+  DELETE FROM order_items    WHERE id IS NOT NULL;
+  DELETE FROM orders         WHERE id IS NOT NULL;
+  DELETE FROM daily_openings WHERE id IS NOT NULL;
+  DELETE FROM daily_closings WHERE id IS NOT NULL;
+  DELETE FROM products       WHERE id IS NOT NULL;
+  DELETE FROM categories     WHERE id IS NOT NULL;
+  DELETE FROM payment_methods WHERE id IS NOT NULL;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION reset_order_data() TO authenticated;
+GRANT EXECUTE ON FUNCTION reset_all_data()   TO authenticated;
+
+-- =============================================
+-- 初期データ
 -- =============================================
 INSERT INTO categories (name, sort_order) VALUES
   ('フード', 1),
