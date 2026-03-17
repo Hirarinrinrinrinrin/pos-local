@@ -36,7 +36,7 @@ export interface Staff {
   id: string
   name: string
   role: Role
-  email: string
+  email: string | null
   created_at: string
 }
 
