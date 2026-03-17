@@ -4,11 +4,12 @@ import { StaffClient } from './StaffClient'
 export default async function StaffPage() {
   const supabase = await createClient()
 
+  const { data: { user } } = await supabase.auth.getUser()
+
   const { data: staffList } = await supabase
     .from('staff')
     .select('*')
     .order('created_at')
 
-  // auth.usersからメールアドレスを取得（admin APIが必要なためemailは別途保持推奨）
-  return <StaffClient staffList={staffList ?? []} />
+  return <StaffClient staffList={staffList ?? []} currentUserId={user?.id ?? ''} />
 }
