@@ -52,6 +52,7 @@ export function StaffClient({ staffList, currentUserId }: StaffClientProps) {
 
   function openEdit(staff: Staff) {
     setName(staff.name)
+    setEmail(staff.email ?? '')
     setRole(staff.role)
     setEditTarget(staff)
   }
@@ -77,7 +78,7 @@ export function StaffClient({ staffList, currentUserId }: StaffClientProps) {
     if (!editTarget) return
     startTransition(async () => {
       try {
-        await updateStaff(editTarget.id, name, role)
+        await updateStaff(editTarget.id, name, role, email || undefined)
         toast.success('スタッフ情報を更新しました')
         setEditTarget(null)
       } catch (e) {
@@ -253,6 +254,15 @@ export function StaffClient({ staffList, currentUserId }: StaffClientProps) {
             <div className="space-y-1.5">
               <Label>名前</Label>
               <Input value={name} onChange={e => setName(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>メールアドレス</Label>
+              <Input
+                type="email"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                placeholder="staff@example.com"
+              />
             </div>
             <div className="space-y-1.5">
               <Label>ロール</Label>

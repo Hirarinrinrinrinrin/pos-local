@@ -57,13 +57,26 @@ export async function addStaff(formData: FormData) {
   revalidatePath('/admin/staff')
 }
 
-export async function updateStaff(id: string, name: string, role: string) {
+export async function updateStaff(id: string, name: string, role: string, email?: string) {
   await requireAdmin()
 
   const adminClient = createAdminClient()
+
+  // auth.users のメールアドレスを更新（指定された場合）
+  if (email && email.trim()) {
+    const { error: authError } = await adminClient.auth.admin.updateUserById(id, {
+      email: email.trim(),
+      email_confirm: true,
+    })
+    if (authError) throw new Error(`メールアドレスの更新に失敗しました: ${authError.message}`)
+  }
+
+  const updateData: Record<string, string> = { name: name.trim(), role }
+  if (email && email.trim()) updateData.email = email.trim()
+
   const { error } = await adminClient
     .from('staff')
-    .update({ name: name.trim(), role })
+    .update(updateData)
     .eq('id', id)
 
   if (error) throw new Error(error.message)
