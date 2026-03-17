@@ -9,35 +9,7 @@ import { Separator } from '@/components/ui/separator'
 import { toast } from 'sonner'
 
 // =============================================
-// サンプルデータ定義
-// =============================================
-
-const SAMPLE_CATEGORIES = [
-  { name: 'フード', sort_order: 1 },
-  { name: 'ドリンク', sort_order: 2 },
-  { name: 'デザート', sort_order: 3 },
-]
-
-const SAMPLE_PAYMENT_METHODS = [
-  { name: '現金', key: 'cash', requires_amount_input: true, requires_change: true, sort_order: 1 },
-  { name: 'カード', key: 'card', requires_amount_input: false, requires_change: false, sort_order: 2 },
-  { name: '電子マネー', key: 'emoney', requires_amount_input: false, requires_change: false, sort_order: 3 },
-  { name: 'QRコード決済', key: 'qr', requires_amount_input: false, requires_change: false, sort_order: 4 },
-]
-
-const SAMPLE_PRODUCTS = [
-  { name: 'コーヒー', price: 350, categoryName: 'ドリンク' },
-  { name: '紅茶', price: 300, categoryName: 'ドリンク' },
-  { name: 'オレンジジュース', price: 300, categoryName: 'ドリンク' },
-  { name: 'ハンバーガー', price: 650, categoryName: 'フード' },
-  { name: 'フライドポテト', price: 300, categoryName: 'フード' },
-  { name: 'サンドイッチ', price: 500, categoryName: 'フード' },
-  { name: 'チーズケーキ', price: 400, categoryName: 'デザート' },
-  { name: 'プリン', price: 350, categoryName: 'デザート' },
-]
-
-// =============================================
-// CSV パーサー
+// CSV パーサー（商品）
 // =============================================
 
 type CsvRow = {
@@ -55,7 +27,6 @@ function parseCSV(text: string): CsvRow[] {
     .slice(1)
     .filter((line) => line.trim())
     .map((line) => {
-      // ダブルクォート除去・カンマ分割
       const cols = line.split(',').map((c) => c.trim().replace(/^"(.*)"$/, '$1'))
       const [name, priceStr, categoryName] = cols
 
@@ -73,7 +44,7 @@ function parseCSV(text: string): CsvRow[] {
 }
 
 // =============================================
-// 支払方法 CSV パーサー
+// CSV パーサー（支払方法）
 // =============================================
 
 const PM_TYPE_LABELS = ['確定金額', '金額入力', '現金'] as const
@@ -118,24 +89,7 @@ function parsePmCSV(text: string): PmCsvRow[] {
 
 // =============================================
 
-interface SetupClientProps {
-  categoryCount: number
-  productCount: number
-  paymentMethodCount: number
-}
-
-export function SetupClient({
-  categoryCount: initCatCount,
-  productCount: initProdCount,
-  paymentMethodCount: initPmCount,
-}: SetupClientProps) {
-  const [counts, setCounts] = useState({
-    categories: initCatCount,
-    products: initProdCount,
-    paymentMethods: initPmCount,
-  })
-  const [loading, setLoading] = useState(false)
-
+export function SetupClient() {
   // データリセット用 state
   const [resetDialogOpen, setResetDialogOpen] = useState(false)
   const [resetType, setResetType] = useState<'orders' | 'all' | null>(null)
@@ -154,21 +108,8 @@ export function SetupClient({
   const [pmImporting, setPmImporting] = useState(false)
   const pmFileInputRef = useRef<HTMLInputElement>(null)
 
-  const refreshCounts = async (supabase: ReturnType<typeof createClient>) => {
-    const [catRes, prodRes, pmRes] = await Promise.all([
-      supabase.from('categories').select('id', { count: 'exact', head: true }),
-      supabase.from('products').select('id', { count: 'exact', head: true }),
-      supabase.from('payment_methods').select('id', { count: 'exact', head: true }),
-    ])
-    setCounts({
-      categories: catRes.count ?? 0,
-      products: prodRes.count ?? 0,
-      paymentMethods: pmRes.count ?? 0,
-    })
-  }
-
   // =============================================
-  // CSV ファイル選択
+  // CSV ファイル選択（商品）
   // =============================================
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -179,11 +120,9 @@ export function SetupClient({
     const reader = new FileReader()
     reader.onload = (ev) => {
       const buffer = ev.target?.result as ArrayBuffer
-      // Shift-JIS（Excel日本語デフォルト）を先に試みる
       let text = ''
       try {
         const decoded = new TextDecoder('shift-jis').decode(buffer)
-        // 文字化け検出（置換文字が多い場合はUTF-8へフォールバック）
         text = decoded.includes('\uFFFD')
           ? new TextDecoder('utf-8').decode(buffer)
           : decoded
@@ -202,12 +141,11 @@ export function SetupClient({
   }
 
   // =============================================
-  // テンプレートダウンロード
+  // テンプレートダウンロード（商品）
   // =============================================
 
   const downloadTemplate = () => {
     const content = '商品名,価格,カテゴリ名\nコーヒー,350,ドリンク\nハンバーガー,650,フード\nチーズケーキ,400,デザート'
-    // BOM付きUTF-8でExcelでも文字化けしない
     const blob = new Blob(['\uFEFF' + content], { type: 'text/csv;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -218,7 +156,7 @@ export function SetupClient({
   }
 
   // =============================================
-  // CSV インポート実行
+  // CSV インポート実行（商品）
   // =============================================
 
   const handleImport = async () => {
@@ -228,7 +166,6 @@ export function SetupClient({
     setImporting(true)
     const supabase = createClient()
 
-    // 1. 不足カテゴリを自動作成
     const uniqueCategories = [...new Set(validRows.map((r) => r.categoryName))]
     const { data: existingCats } = await supabase.from('categories').select('id, name')
     const catMap = Object.fromEntries((existingCats ?? []).map((c) => [c.name, c.id]))
@@ -247,11 +184,9 @@ export function SetupClient({
       for (const cat of newCats ?? []) catMap[cat.name] = cat.id
     }
 
-    // 2. 既存商品名を取得（重複スキップ用）
     const { data: existingProds } = await supabase.from('products').select('name')
     const existingProdNames = new Set((existingProds ?? []).map((p) => p.name))
 
-    // 3. 商品を投入
     const toInsert = validRows
       .filter((r) => !existingProdNames.has(r.name))
       .map((r) => ({ name: r.name, price: r.price, category_id: catMap[r.categoryName], is_active: true }))
@@ -274,7 +209,6 @@ export function SetupClient({
       if (missingCats.length > 0) toast.success(`カテゴリ「${missingCats.join('・')}」を自動作成しました`)
       toast.success(msg)
       handleClearCSV()
-      await refreshCounts(supabase)
     }
     setImporting(false)
   }
@@ -351,71 +285,8 @@ export function SetupClient({
     } else {
       toast.success(`${toUpsert.length}件の支払方法を設定しました（既存は上書き）`)
       handleClearPmCSV()
-      await refreshCounts(supabase)
     }
     setPmImporting(false)
-  }
-
-  // =============================================
-  // サンプルデータ投入（個別）
-  // =============================================
-
-  const seedCategories = async () => {
-    setLoading(true)
-    const supabase = createClient()
-    const { data: existing } = await supabase.from('categories').select('name')
-    const existingNames = new Set((existing ?? []).map((c) => c.name))
-    const toInsert = SAMPLE_CATEGORIES.filter((c) => !existingNames.has(c.name))
-    if (toInsert.length === 0) {
-      toast.info('サンプルカテゴリはすべて登録済みです')
-    } else {
-      const { error } = await supabase.from('categories').insert(toInsert)
-      error ? toast.error('失敗しました') : toast.success(`${toInsert.length}件追加しました`)
-      if (!error) await refreshCounts(supabase)
-    }
-    setLoading(false)
-  }
-
-  const seedProducts = async () => {
-    setLoading(true)
-    const supabase = createClient()
-    const { data: categories } = await supabase.from('categories').select('id, name')
-    const categoryMap = Object.fromEntries((categories ?? []).map((c) => [c.name, c.id]))
-    const missingCats = [...new Set(SAMPLE_PRODUCTS.map((p) => p.categoryName))].filter(
-      (name) => !categoryMap[name]
-    )
-    if (missingCats.length > 0) {
-      toast.error(`カテゴリが不足しています: ${missingCats.join(', ')}`)
-      setLoading(false)
-      return
-    }
-    const { data: existing } = await supabase.from('products').select('name')
-    const existingNames = new Set((existing ?? []).map((p) => p.name))
-    const toInsert = SAMPLE_PRODUCTS.filter((p) => !existingNames.has(p.name)).map((p) => ({
-      name: p.name,
-      price: p.price,
-      category_id: categoryMap[p.categoryName],
-      is_active: true,
-    }))
-    if (toInsert.length === 0) {
-      toast.info('サンプル商品はすべて登録済みです')
-    } else {
-      const { error } = await supabase.from('products').insert(toInsert)
-      error ? toast.error('失敗しました') : toast.success(`${toInsert.length}件追加しました`)
-      if (!error) await refreshCounts(supabase)
-    }
-    setLoading(false)
-  }
-
-  const seedPaymentMethods = async () => {
-    setLoading(true)
-    const supabase = createClient()
-    const { error } = await supabase
-      .from('payment_methods')
-      .upsert(SAMPLE_PAYMENT_METHODS, { onConflict: 'key' })
-    error ? toast.error('失敗しました') : toast.success('支払方法を設定しました')
-    if (!error) await refreshCounts(supabase)
-    setLoading(false)
   }
 
   // =============================================
@@ -441,31 +312,7 @@ export function SetupClient({
       const msg = resetType === 'all' ? '全データをリセットしました' : '注文データをリセットしました'
       toast.success(msg)
       setResetDialogOpen(false)
-      if (resetType === 'all') await refreshCounts(supabase)
     }
-  }
-
-  const seedAll = async () => {
-    setLoading(true)
-    const supabase = createClient()
-    const { data: existingCats } = await supabase.from('categories').select('name')
-    const existingCatNames = new Set((existingCats ?? []).map((c) => c.name))
-    const catsToInsert = SAMPLE_CATEGORIES.filter((c) => !existingCatNames.has(c.name))
-    if (catsToInsert.length > 0) await supabase.from('categories').insert(catsToInsert)
-
-    const { data: categories } = await supabase.from('categories').select('id, name')
-    const categoryMap = Object.fromEntries((categories ?? []).map((c) => [c.name, c.id]))
-    const { data: existingProds } = await supabase.from('products').select('name')
-    const existingProdNames = new Set((existingProds ?? []).map((p) => p.name))
-    const prodsToInsert = SAMPLE_PRODUCTS.filter(
-      (p) => !existingProdNames.has(p.name) && categoryMap[p.categoryName]
-    ).map((p) => ({ name: p.name, price: p.price, category_id: categoryMap[p.categoryName], is_active: true }))
-    if (prodsToInsert.length > 0) await supabase.from('products').insert(prodsToInsert)
-
-    await supabase.from('payment_methods').upsert(SAMPLE_PAYMENT_METHODS, { onConflict: 'key' })
-    toast.success('サンプルデータを一括投入しました')
-    await refreshCounts(supabase)
-    setLoading(false)
   }
 
   // =============================================
@@ -481,16 +328,15 @@ export function SetupClient({
     <div className="p-6 space-y-6">
       <div>
         <h2 className="text-2xl font-bold text-gray-800">初期設定</h2>
-        <p className="text-sm text-gray-500 mt-1">商品CSVの一括インポートとサンプルデータの投入ができます。</p>
+        <p className="text-sm text-gray-500 mt-1">商品・支払方法のCSV一括インポートとデータリセットができます。</p>
       </div>
 
-      {/* ===== CSVインポート ===== */}
+      {/* ===== 商品CSVインポート ===== */}
       <Card>
         <CardHeader>
           <CardTitle className="text-base">商品CSVインポート</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* フォーマット説明 */}
           <div className="bg-gray-50 rounded-lg p-3 text-xs text-gray-500 space-y-1">
             <p className="font-medium text-gray-700">CSVフォーマット（1行目はヘッダー）</p>
             <pre className="font-mono">商品名,価格,カテゴリ名{'\n'}コーヒー,350,ドリンク{'\n'}ハンバーガー,650,フード</pre>
@@ -499,28 +345,16 @@ export function SetupClient({
             <p>・既存の商品名と重複する行はスキップされます</p>
           </div>
 
-          {/* テンプレートDL + ファイル選択 */}
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" size="sm" onClick={downloadTemplate}>
               テンプレートをダウンロード
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => fileInputRef.current?.click()}
-            >
+            <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}>
               CSVファイルを選択
             </Button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".csv"
-              className="hidden"
-              onChange={handleFileChange}
-            />
+            <input ref={fileInputRef} type="file" accept=".csv" className="hidden" onChange={handleFileChange} />
           </div>
 
-          {/* ファイル名 + クリア */}
           {csvFileName && (
             <div className="flex items-center gap-2 text-sm text-gray-600">
               <span className="font-medium">{csvFileName}</span>
@@ -533,7 +367,6 @@ export function SetupClient({
             </div>
           )}
 
-          {/* プレビューテーブル */}
           {csvRows.length > 0 && (
             <div className="border rounded-lg overflow-hidden">
               <table className="w-full text-xs">
@@ -554,11 +387,7 @@ export function SetupClient({
                       </td>
                       <td className="px-3 py-1.5 text-gray-600">{row.categoryName || '—'}</td>
                       <td className="px-3 py-1.5">
-                        {row.error ? (
-                          <span className="text-red-500">{row.error}</span>
-                        ) : (
-                          <span className="text-green-600">OK</span>
-                        )}
+                        {row.error ? <span className="text-red-500">{row.error}</span> : <span className="text-green-600">OK</span>}
                       </td>
                     </tr>
                   ))}
@@ -567,13 +396,8 @@ export function SetupClient({
             </div>
           )}
 
-          {/* インポートボタン */}
           {validCount > 0 && (
-            <Button
-              onClick={handleImport}
-              disabled={importing}
-              className="bg-blue-600 hover:bg-blue-700"
-            >
+            <Button onClick={handleImport} disabled={importing} className="bg-blue-600 hover:bg-blue-700">
               {importing ? '投入中...' : `${validCount}件をインポートする`}
             </Button>
           )}
@@ -586,7 +410,6 @@ export function SetupClient({
           <CardTitle className="text-base">支払方法CSVインポート</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* フォーマット説明 */}
           <div className="bg-gray-50 rounded-lg p-3 text-xs text-gray-500 space-y-1">
             <p className="font-medium text-gray-700">CSVフォーマット（1行目はヘッダー）</p>
             <pre className="font-mono">{'支払方法名,識別子,タイプ,表示順\n現金,cash,現金,1\nカード,card,確定金額,2'}</pre>
@@ -595,7 +418,6 @@ export function SetupClient({
             <p>・識別子が一致する既存データは<strong className="text-gray-700">上書き更新</strong>されます</p>
           </div>
 
-          {/* テンプレートDL + ファイル選択 */}
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" size="sm" onClick={downloadPmTemplate}>
               テンプレートをダウンロード
@@ -603,16 +425,9 @@ export function SetupClient({
             <Button variant="outline" size="sm" onClick={() => pmFileInputRef.current?.click()}>
               CSVファイルを選択
             </Button>
-            <input
-              ref={pmFileInputRef}
-              type="file"
-              accept=".csv"
-              className="hidden"
-              onChange={handlePmFileChange}
-            />
+            <input ref={pmFileInputRef} type="file" accept=".csv" className="hidden" onChange={handlePmFileChange} />
           </div>
 
-          {/* ファイル名 + クリア */}
           {pmCsvFileName && (
             <div className="flex items-center gap-2 text-sm text-gray-600">
               <span className="font-medium">{pmCsvFileName}</span>
@@ -625,7 +440,6 @@ export function SetupClient({
             </div>
           )}
 
-          {/* プレビューテーブル */}
           {pmCsvRows.length > 0 && (
             <div className="border rounded-lg overflow-hidden">
               <table className="w-full text-xs">
@@ -646,11 +460,7 @@ export function SetupClient({
                       <td className="px-3 py-1.5 text-gray-600">{row.error ? '—' : row.typeLabel}</td>
                       <td className="px-3 py-1.5 text-right text-gray-500">{row.error ? '—' : row.sortOrder}</td>
                       <td className="px-3 py-1.5">
-                        {row.error ? (
-                          <span className="text-red-500">{row.error}</span>
-                        ) : (
-                          <span className="text-green-600">OK</span>
-                        )}
+                        {row.error ? <span className="text-red-500">{row.error}</span> : <span className="text-green-600">OK</span>}
                       </td>
                     </tr>
                   ))}
@@ -659,7 +469,6 @@ export function SetupClient({
             </div>
           )}
 
-          {/* インポートボタン */}
           {pmValidCount > 0 && (
             <Button onClick={handlePmImport} disabled={pmImporting} className="bg-blue-600 hover:bg-blue-700">
               {pmImporting ? '投入中...' : `${pmValidCount}件をインポートする`}
@@ -667,79 +476,6 @@ export function SetupClient({
           )}
         </CardContent>
       </Card>
-
-      <Separator />
-
-      {/* ===== サンプルデータ ===== */}
-      <div>
-        <h3 className="text-sm font-semibold text-gray-500 mb-3">サンプルデータ投入（テスト・デモ用）</h3>
-        <div className="grid gap-4">
-          {/* カテゴリ */}
-          <Card>
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-base">カテゴリ</CardTitle>
-                <span className="text-sm text-gray-500">現在 {counts.categories}件</span>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="flex flex-wrap gap-2">
-                {SAMPLE_CATEGORIES.map((c) => (
-                  <span key={c.name} className="px-2 py-1 bg-gray-100 rounded text-xs text-gray-600">{c.name}</span>
-                ))}
-              </div>
-              <Button onClick={seedCategories} disabled={loading} variant="outline" size="sm">サンプルを投入</Button>
-            </CardContent>
-          </Card>
-
-          {/* 商品 */}
-          <Card>
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-base">商品</CardTitle>
-                <span className="text-sm text-gray-500">現在 {counts.products}件</span>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="flex flex-wrap gap-2">
-                {SAMPLE_PRODUCTS.map((p) => (
-                  <span key={p.name} className="px-2 py-1 bg-gray-100 rounded text-xs text-gray-600">
-                    {p.name}　¥{p.price.toLocaleString()}
-                  </span>
-                ))}
-              </div>
-              <p className="text-xs text-amber-600">※ カテゴリが先に登録されている必要があります</p>
-              <Button onClick={seedProducts} disabled={loading} variant="outline" size="sm">サンプルを投入</Button>
-            </CardContent>
-          </Card>
-
-          {/* 支払方法 */}
-          <Card>
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-base">支払方法</CardTitle>
-                <span className="text-sm text-gray-500">現在 {counts.paymentMethods}件</span>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="flex flex-wrap gap-2">
-                {SAMPLE_PAYMENT_METHODS.map((m) => (
-                  <span key={m.key} className="px-2 py-1 bg-gray-100 rounded text-xs text-gray-600">{m.name}</span>
-                ))}
-              </div>
-              <p className="text-xs text-gray-400">※ 既存の支払方法はkeyが一致する場合上書きされます</p>
-              <Button onClick={seedPaymentMethods} disabled={loading} variant="outline" size="sm">サンプルを投入</Button>
-            </CardContent>
-          </Card>
-        </div>
-
-        <div className="pt-4 space-y-2">
-          <Button onClick={seedAll} disabled={loading} className="w-full h-12 bg-blue-600 hover:bg-blue-700 font-semibold">
-            {loading ? '投入中...' : '全サンプルデータを一括投入'}
-          </Button>
-          <p className="text-xs text-gray-400 text-center">重複はスキップされます</p>
-        </div>
-      </div>
 
       <Separator />
 
