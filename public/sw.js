@@ -4,7 +4,7 @@ const CACHE_NAME = 'pos-local-v1'
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) =>
-      cache.addAll(['/', '/register', '/admin'])
+      cache.addAll(['/pos-local/', '/pos-local/register/', '/pos-local/admin/'])
     )
   )
   self.skipWaiting()
