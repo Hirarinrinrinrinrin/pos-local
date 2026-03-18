@@ -1,7 +1,7 @@
 'use client'
 
 import { useRef, useState } from 'react'
-import { createClient } from '@/lib/supabase/client'
+import { categoriesRepo, productsRepo, paymentMethodsRepo, resetRepo } from '@/lib/db'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -164,53 +164,51 @@ export function SetupClient() {
     if (validRows.length === 0) return
 
     setImporting(true)
-    const supabase = createClient()
+    try {
+      const existingCats = await categoriesRepo.list()
+      const catMap = Object.fromEntries(existingCats.map((c) => [c.name, c.id]))
 
-    const uniqueCategories = [...new Set(validRows.map((r) => r.categoryName))]
-    const { data: existingCats } = await supabase.from('categories').select('id, name')
-    const catMap = Object.fromEntries((existingCats ?? []).map((c) => [c.name, c.id]))
+      const uniqueCategories = [...new Set(validRows.map((r) => r.categoryName))]
+      const missingCats = uniqueCategories.filter((name) => !catMap[name])
 
-    const missingCats = uniqueCategories.filter((name) => !catMap[name])
-    if (missingCats.length > 0) {
-      const { data: newCats, error } = await supabase
-        .from('categories')
-        .insert(missingCats.map((name, i) => ({ name, sort_order: 100 + i })))
-        .select('id, name')
-      if (error) {
-        toast.error('カテゴリの作成に失敗しました')
-        setImporting(false)
+      for (let i = 0; i < missingCats.length; i++) {
+        const id = await categoriesRepo.add({ name: missingCats[i], sort_order: 100 + i }) as string
+        catMap[missingCats[i]] = id
+      }
+
+      const existingProds = await productsRepo.list()
+      const existingProdNames = new Set(existingProds.map((p) => p.name))
+
+      const toInsert = validRows.filter((r) => !existingProdNames.has(r.name))
+      const skipped = validRows.length - toInsert.length
+
+      if (toInsert.length === 0) {
+        toast.info(`すべての商品が登録済みです（${skipped}件スキップ）`)
         return
       }
-      for (const cat of newCats ?? []) catMap[cat.name] = cat.id
-    }
 
-    const { data: existingProds } = await supabase.from('products').select('name')
-    const existingProdNames = new Set((existingProds ?? []).map((p) => p.name))
+      for (const r of toInsert) {
+        await productsRepo.add({
+          name: r.name,
+          price: r.price,
+          category_id: catMap[r.categoryName],
+          is_active: true,
+          image_url: null,
+          stock: null,
+        })
+      }
 
-    const toInsert = validRows
-      .filter((r) => !existingProdNames.has(r.name))
-      .map((r) => ({ name: r.name, price: r.price, category_id: catMap[r.categoryName], is_active: true }))
-
-    const skipped = validRows.length - toInsert.length
-
-    if (toInsert.length === 0) {
-      toast.info(`すべての商品が登録済みです（${skipped}件スキップ）`)
-      setImporting(false)
-      return
-    }
-
-    const { error } = await supabase.from('products').insert(toInsert)
-    if (error) {
-      toast.error('商品の投入に失敗しました')
-    } else {
       const msg = skipped > 0
         ? `${toInsert.length}件を追加しました（${skipped}件は重複スキップ）`
         : `${toInsert.length}件を追加しました`
       if (missingCats.length > 0) toast.success(`カテゴリ「${missingCats.join('・')}」を自動作成しました`)
       toast.success(msg)
       handleClearCSV()
+    } catch {
+      toast.error('商品の投入に失敗しました')
+    } finally {
+      setImporting(false)
     }
-    setImporting(false)
   }
 
   // =============================================
@@ -265,28 +263,24 @@ export function SetupClient() {
     if (validRows.length === 0) return
 
     setPmImporting(true)
-    const supabase = createClient()
-
-    const toUpsert = validRows.map((r) => ({
-      name: r.name,
-      key: r.key,
-      requires_amount_input: r.requires_amount_input,
-      requires_change: r.requires_change,
-      sort_order: r.sortOrder,
-      is_active: true,
-    }))
-
-    const { error } = await supabase
-      .from('payment_methods')
-      .upsert(toUpsert, { onConflict: 'key' })
-
-    if (error) {
-      toast.error('支払方法の投入に失敗しました')
-    } else {
-      toast.success(`${toUpsert.length}件の支払方法を設定しました（既存は上書き）`)
+    try {
+      for (const r of validRows) {
+        await paymentMethodsRepo.upsertByKey({
+          name: r.name,
+          key: r.key,
+          requires_amount_input: r.requires_amount_input,
+          requires_change: r.requires_change,
+          sort_order: r.sortOrder,
+          is_active: true,
+        })
+      }
+      toast.success(`${validRows.length}件の支払方法を設定しました（既存は上書き）`)
       handleClearPmCSV()
+    } catch {
+      toast.error('支払方法の投入に失敗しました')
+    } finally {
+      setPmImporting(false)
     }
-    setPmImporting(false)
   }
 
   // =============================================
@@ -302,16 +296,19 @@ export function SetupClient() {
   const handleReset = async () => {
     if (resetConfirmText !== 'リセット') return
     setResetting(true)
-    const supabase = createClient()
-    const fnName = resetType === 'all' ? 'reset_all_data' : 'reset_order_data'
-    const { error } = await supabase.rpc(fnName)
-    setResetting(false)
-    if (error) {
-      toast.error('リセットに失敗しました: ' + error.message)
-    } else {
+    try {
+      if (resetType === 'all') {
+        await resetRepo.all()
+      } else {
+        await resetRepo.orders()
+      }
       const msg = resetType === 'all' ? '全データをリセットしました' : '注文データをリセットしました'
       toast.success(msg)
       setResetDialogOpen(false)
+    } catch {
+      toast.error('リセットに失敗しました')
+    } finally {
+      setResetting(false)
     }
   }
 

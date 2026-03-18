@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { createClient } from '@/lib/supabase/client'
+import { ordersRepo, orderItemsRepo, jstDayRange } from '@/lib/db'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Separator } from '@/components/ui/separator'
 import type { DailyClosing } from '@/types'
@@ -27,27 +27,15 @@ export function ClosingsClient({ closings, pmNameMap }: ClosingsClientProps) {
     setProductBreakdown([])
     setLoadingProducts(true)
 
-    const supabase = createClient()
-    const start = new Date(closing.date + 'T00:00:00+09:00').toISOString()
-    const end = new Date(
-      new Date(closing.date + 'T00:00:00+09:00').getTime() + 24 * 60 * 60 * 1000
-    ).toISOString()
+    try {
+      const { start, end } = jstDayRange(closing.date)
+      const orders = await ordersRepo.forDateRange(start, end)
+      const completedIds = orders
+        .filter((o) => o.status === 'completed')
+        .map((o) => o.id)
 
-    const { data: orders } = await supabase
-      .from('orders')
-      .select('id')
-      .gte('created_at', start)
-      .lt('created_at', end)
-      .eq('status', 'completed')
-
-    if (orders && orders.length > 0) {
-      const orderIds = orders.map((o) => o.id)
-      const { data: items } = await supabase
-        .from('order_items')
-        .select('name, price, quantity')
-        .in('order_id', orderIds)
-
-      if (items) {
+      if (completedIds.length > 0) {
+        const items = await orderItemsRepo.forOrders(completedIds)
         const map: Record<string, { quantity: number; total: number }> = {}
         for (const item of items) {
           if (!map[item.name]) map[item.name] = { quantity: 0, total: 0 }
@@ -60,9 +48,9 @@ export function ClosingsClient({ closings, pmNameMap }: ClosingsClientProps) {
             .sort((a, b) => b.total - a.total)
         )
       }
+    } finally {
+      setLoadingProducts(false)
     }
-
-    setLoadingProducts(false)
   }
 
   return (

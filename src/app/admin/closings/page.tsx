@@ -1,21 +1,18 @@
-import { createClient } from '@/lib/supabase/server'
+'use client'
+import { useState, useEffect } from 'react'
 import { ClosingsClient } from './ClosingsClient'
-import type { DailyClosing } from '@/types'
+import { closingsRepo, paymentMethodsRepo } from '@/lib/db'
+import type { DailyClosing, PaymentMethodConfig } from '@/types'
 
-export default async function ClosingsPage() {
-  const supabase = await createClient()
-
-  const [closingsResult, paymentMethodsResult] = await Promise.all([
-    supabase.from('daily_closings').select('*').order('date', { ascending: false }).limit(90),
-    supabase.from('payment_methods').select('key, name').order('sort_order'),
-  ])
-
-  return (
-    <ClosingsClient
-      closings={(closingsResult.data ?? []) as DailyClosing[]}
-      pmNameMap={Object.fromEntries(
-        (paymentMethodsResult.data ?? []).map((m) => [m.key, m.name])
-      )}
-    />
-  )
+export default function ClosingsPage() {
+  const [closings, setClosings] = useState<DailyClosing[]>([])
+  const [pmNameMap, setPmNameMap] = useState<Record<string, string>>({})
+  const [loading, setLoading] = useState(true)
+  useEffect(() => {
+    Promise.all([closingsRepo.list(), paymentMethodsRepo.list()])
+      .then(([c, m]) => { setClosings(c); setPmNameMap(Object.fromEntries(m.map((x) => [x.key, x.name]))) })
+      .finally(() => setLoading(false))
+  }, [])
+  if (loading) return <div className="p-6 text-gray-400 text-sm">読み込み中...</div>
+  return <ClosingsClient closings={closings} pmNameMap={pmNameMap} />
 }

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { createClient } from '@/lib/supabase/client'
+import { ordersRepo } from '@/lib/db'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
@@ -12,6 +12,7 @@ import type { Order, OrderStatus, PaymentMethodConfig } from '@/types'
 interface OrdersClientProps {
   orders: Order[]
   paymentMethods: PaymentMethodConfig[]
+  onReload: () => void
 }
 
 interface EditForm {
@@ -19,7 +20,7 @@ interface EditForm {
   status: OrderStatus
 }
 
-export function OrdersClient({ orders: initialOrders, paymentMethods }: OrdersClientProps) {
+export function OrdersClient({ orders: initialOrders, paymentMethods, onReload }: OrdersClientProps) {
   const [orders, setOrders] = useState(initialOrders)
   const [selected, setSelected] = useState<Order | null>(null)
   const [form, setForm] = useState<EditForm>({ payment_method: 'cash', status: 'completed' })
@@ -33,15 +34,8 @@ export function OrdersClient({ orders: initialOrders, paymentMethods }: OrdersCl
   const handleSave = async () => {
     if (!selected) return
     setSaving(true)
-    const supabase = createClient()
-    const { error } = await supabase
-      .from('orders')
-      .update({ payment_method: form.payment_method, status: form.status })
-      .eq('id', selected.id)
-
-    if (error) {
-      toast.error('更新に失敗しました')
-    } else {
+    try {
+      await ordersRepo.update(selected.id, { payment_method: form.payment_method, status: form.status })
       setOrders((prev) =>
         prev.map((o) =>
           o.id === selected.id
@@ -51,8 +45,11 @@ export function OrdersClient({ orders: initialOrders, paymentMethods }: OrdersCl
       )
       toast.success('注文情報を更新しました')
       setSelected(null)
+    } catch {
+      toast.error('更新に失敗しました')
+    } finally {
+      setSaving(false)
     }
-    setSaving(false)
   }
 
   return (

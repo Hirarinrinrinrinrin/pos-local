@@ -1,8 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
+import { productsRepo } from '@/lib/db'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -20,6 +19,7 @@ import type { Category, Product } from '@/types'
 interface ProductsClientProps {
   products: Product[]
   categories: Category[]
+  onReload: () => void
 }
 
 interface ProductForm {
@@ -31,8 +31,7 @@ interface ProductForm {
 
 const emptyForm: ProductForm = { name: '', price: '', category_id: '', is_active: true }
 
-export function ProductsClient({ products: initialProducts, categories }: ProductsClientProps) {
-  const router = useRouter()
+export function ProductsClient({ products: initialProducts, categories, onReload }: ProductsClientProps) {
   const [products, setProducts] = useState(initialProducts)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editTarget, setEditTarget] = useState<Product | null>(null)
@@ -68,7 +67,6 @@ export function ProductsClient({ products: initialProducts, categories }: Produc
     }
 
     setSaving(true)
-    const supabase = createClient()
     const payload = {
       name: form.name.trim(),
       price,
@@ -76,51 +74,32 @@ export function ProductsClient({ products: initialProducts, categories }: Produc
       is_active: form.is_active,
     }
 
-    if (editTarget) {
-      const { data, error } = await supabase
-        .from('products')
-        .update(payload)
-        .eq('id', editTarget.id)
-        .select('*, categories(id, name, sort_order, created_at)')
-        .single()
-
-      if (error) {
-        toast.error('更新に失敗しました')
-      } else {
-        setProducts((prev) => prev.map((p) => (p.id === editTarget.id ? (data as Product) : p)))
+    try {
+      if (editTarget) {
+        await productsRepo.update(editTarget.id, payload)
         toast.success('商品を更新しました')
-        setDialogOpen(false)
-      }
-    } else {
-      const { data, error } = await supabase
-        .from('products')
-        .insert(payload)
-        .select('*, categories(id, name, sort_order, created_at)')
-        .single()
-
-      if (error) {
-        toast.error('作成に失敗しました')
       } else {
-        setProducts((prev) => [data as Product, ...prev])
+        await productsRepo.add({ ...payload, image_url: null, stock: null })
         toast.success('商品を追加しました')
-        setDialogOpen(false)
       }
+      setDialogOpen(false)
+      onReload()
+    } catch {
+      toast.error('保存に失敗しました')
+    } finally {
+      setSaving(false)
     }
-    setSaving(false)
-    router.refresh()
   }
 
   const handleDelete = async (product: Product) => {
     if (!confirm(`「${product.name}」を削除しますか？`)) return
 
-    const supabase = createClient()
-    const { error } = await supabase.from('products').delete().eq('id', product.id)
-
-    if (error) {
-      toast.error('削除に失敗しました')
-    } else {
+    try {
+      await productsRepo.delete(product.id)
       setProducts((prev) => prev.filter((p) => p.id !== product.id))
       toast.success('削除しました')
+    } catch {
+      toast.error('削除に失敗しました')
     }
   }
 
@@ -145,14 +124,14 @@ export function ProductsClient({ products: initialProducts, categories }: Produc
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {products.length === 0 ? (
+            {initialProducts.length === 0 ? (
               <tr>
                 <td colSpan={5} className="px-4 py-8 text-center text-gray-400">
                   商品がありません
                 </td>
               </tr>
             ) : (
-              products.map((product) => (
+              initialProducts.map((product) => (
                 <tr key={product.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3 font-medium text-gray-800">{product.name}</td>
                   <td className="px-4 py-3 text-gray-500">

@@ -24,7 +24,7 @@ export interface Product {
   id: string
   name: string
   price: number
-  category_id: string
+  category_id: string | null
   image_url: string | null
   stock: number | null
   is_active: boolean

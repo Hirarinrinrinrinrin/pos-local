@@ -1,8 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
+import { paymentMethodsRepo } from '@/lib/db'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -16,6 +15,7 @@ type InputType = 'exact' | 'amount' | 'cash'
 
 interface PaymentMethodsClientProps {
   paymentMethods: PaymentMethodConfig[]
+  onReload: () => void
 }
 
 interface PMForm {
@@ -54,9 +54,7 @@ const INPUT_TYPE_LABELS: Record<InputType, string> = {
   cash:   '現金（テンキーあり・お釣り計算）',
 }
 
-export function PaymentMethodsClient({ paymentMethods: initial }: PaymentMethodsClientProps) {
-  const router = useRouter()
-  const [methods, setMethods] = useState(initial)
+export function PaymentMethodsClient({ paymentMethods: initial, onReload }: PaymentMethodsClientProps) {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editTarget, setEditTarget] = useState<PaymentMethodConfig | null>(null)
   const [form, setForm] = useState<PMForm>(emptyForm)
@@ -95,7 +93,6 @@ export function PaymentMethodsClient({ paymentMethods: initial }: PaymentMethods
     }
 
     setSaving(true)
-    const supabase = createClient()
     const flags = toFlags(form.input_type)
     const payload = {
       name: form.name.trim(),
@@ -105,60 +102,32 @@ export function PaymentMethodsClient({ paymentMethods: initial }: PaymentMethods
       sort_order: parseInt(form.sort_order) || 0,
     }
 
-    if (editTarget) {
-      const { data, error } = await supabase
-        .from('payment_methods')
-        .update(payload)
-        .eq('id', editTarget.id)
-        .select()
-        .single()
-
-      if (error) {
-        toast.error('更新に失敗しました')
-      } else {
-        setMethods((prev) =>
-          prev.map((m) => (m.id === editTarget.id ? (data as PaymentMethodConfig) : m))
-        )
+    try {
+      if (editTarget) {
+        await paymentMethodsRepo.update(editTarget.id, payload)
         toast.success('支払方法を更新しました')
-        setDialogOpen(false)
-        router.refresh()
-      }
-    } else {
-      const { data, error } = await supabase
-        .from('payment_methods')
-        .insert(payload)
-        .select()
-        .single()
-
-      if (error) {
-        if (error.code === '23505') {
-          toast.error('その識別キーはすでに使用されています')
-        } else {
-          toast.error('作成に失敗しました')
-        }
       } else {
-        setMethods((prev) =>
-          [...prev, data as PaymentMethodConfig].sort((a, b) => a.sort_order - b.sort_order)
-        )
+        await paymentMethodsRepo.add(payload)
         toast.success('支払方法を追加しました')
-        setDialogOpen(false)
-        router.refresh()
       }
+      setDialogOpen(false)
+      onReload()
+    } catch {
+      toast.error('保存に失敗しました')
+    } finally {
+      setSaving(false)
     }
-    setSaving(false)
   }
 
   const handleDelete = async (pm: PaymentMethodConfig) => {
     if (!confirm(`「${pm.name}」を削除しますか？\n既存の注文データには影響しません。`)) return
 
-    const supabase = createClient()
-    const { error } = await supabase.from('payment_methods').delete().eq('id', pm.id)
-
-    if (error) {
-      toast.error('削除に失敗しました')
-    } else {
-      setMethods((prev) => prev.filter((m) => m.id !== pm.id))
+    try {
+      await paymentMethodsRepo.delete(pm.id)
       toast.success('削除しました')
+      onReload()
+    } catch {
+      toast.error('削除に失敗しました')
     }
   }
 
@@ -184,14 +153,14 @@ export function PaymentMethodsClient({ paymentMethods: initial }: PaymentMethods
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {methods.length === 0 ? (
+            {initial.length === 0 ? (
               <tr>
                 <td colSpan={6} className="px-4 py-8 text-center text-gray-400">
                   支払方法がありません
                 </td>
               </tr>
             ) : (
-              methods.map((pm) => (
+              initial.map((pm) => (
                 <tr key={pm.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3 font-medium text-gray-800">{pm.name}</td>
                   <td className="px-4 py-3 font-mono text-gray-500 text-xs">{pm.key}</td>
