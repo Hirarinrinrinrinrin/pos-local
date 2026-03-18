@@ -21,11 +21,11 @@ export default function RootLayout({
   return (
     <html lang="ja">
       <head>
-        <link rel="manifest" href="/manifest.json" />
+        <link rel="manifest" href="/pos-local/manifest.json" />
         <meta name="theme-color" content="#007AFF" />
-        <link rel="apple-touch-icon" href="/icon-192.png" />
+        <link rel="apple-touch-icon" href="/pos-local/icon-192.png" />
         <script dangerouslySetInnerHTML={{
-          __html: `if ('serviceWorker' in navigator) { window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js')); }`
+          __html: `if ('serviceWorker' in navigator) { window.addEventListener('load', () => navigator.serviceWorker.register('/pos-local/sw.js')); }`
         }} />
       </head>
       <body className={`${geistSans.variable} antialiased`}>
