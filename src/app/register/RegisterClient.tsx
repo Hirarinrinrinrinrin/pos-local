@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { ProductCard } from '@/components/register/ProductCard'
 import { CartPanel } from '@/components/register/CartPanel'
 import { PaymentDialog } from '@/components/register/PaymentDialog'
@@ -30,12 +31,12 @@ export function RegisterClient({ categories, products, paymentMethods }: Registe
       <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
         <header className="flex items-center justify-between px-4 py-2 bg-white border-b border-gray-200 shrink-0">
           <h1 className="text-lg font-bold text-gray-800">POSレジ</h1>
-          <a
+          <Link
             href="/admin"
             className="px-3 py-1.5 text-xs rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors"
           >
             管理画面
-          </a>
+          </Link>
         </header>
 
         <div className="px-4 pt-3 shrink-0">
