@@ -6,16 +6,19 @@ import { Separator } from '@/components/ui/separator'
 
 interface CartPanelProps {
   onCheckout: () => void
+  hideHeader?: boolean
 }
 
-export function CartPanel({ onCheckout }: CartPanelProps) {
+export function CartPanel({ onCheckout, hideHeader }: CartPanelProps) {
   const { items, removeItem, updateQuantity, subtotal, tax, total } = useCartStore()
 
   return (
     <div className="flex h-full flex-col bg-white border-l border-gray-200">
-      <div className="px-4 py-3 border-b border-gray-200">
-        <h2 className="text-lg font-bold text-gray-800">注文内容</h2>
-      </div>
+      {!hideHeader && (
+        <div className="px-4 py-3 border-b border-gray-200">
+          <h2 className="text-lg font-bold text-gray-800">注文内容</h2>
+        </div>
+      )}
 
       <div className="flex-1 overflow-y-auto px-4 py-2 space-y-2">
         {items.length === 0 ? (
