@@ -45,7 +45,7 @@ export function OpeningSection({
   }, 0)
 
   const handleCountChange = (value: number, input: string) => {
-    if (input !== '' && !/^d+$/.test(input)) return
+    if (input !== '' && !/^\d+$/.test(input)) return
     setCounts((prev) => ({ ...prev, [value]: input }))
   }
 
