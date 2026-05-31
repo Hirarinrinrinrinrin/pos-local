@@ -49,7 +49,8 @@ export function ClosingSection({
     return sum + d.value * (parseInt(counts[d.value] ?? '') || 0)
   }, 0)
 
-  const expectedCash = openingCash + (paymentBreakdown['cash'] ?? 0)
+  const cashSales = paymentBreakdown['cash'] ?? 0
+  const expectedCash = openingCash + cashSales
   const cashDiff = cashTotal - expectedCash
 
   const handleCountChange = (value: number, input: string) => {
@@ -123,20 +124,25 @@ export function ClosingSection({
           <div className="space-y-4 text-sm">
             {/* 売上サマリー */}
             <div className="bg-gray-50 rounded-xl p-3 space-y-1.5">
+              <div className="flex justify-between text-gray-600 text-xs">
+                <span>釣り銭準備金（開店時）</span>
+                <span className="tabular-nums">¥{openingCash.toLocaleString()}</span>
+              </div>
+              <div className="border-t border-gray-200 my-1" />
               <div className="flex justify-between font-semibold">
                 <span>本日の売上</span>
-                <span>¥{todaySales.toLocaleString()}</span>
+                <span className="tabular-nums">¥{todaySales.toLocaleString()}</span>
               </div>
               {Object.entries(paymentBreakdown).map(([key, amount]) => (
                 <div key={key} className="flex justify-between text-gray-500 text-xs">
                   <span>{pmNameMap[key] ?? key}</span>
-                  <span>¥{amount.toLocaleString()}</span>
+                  <span className="tabular-nums">¥{amount.toLocaleString()}</span>
                 </div>
               ))}
               {refundCount > 0 && (
                 <div className="flex justify-between text-red-500 text-xs">
                   <span>返金（{refundCount}件）</span>
-                  <span>-¥{refundTotal.toLocaleString()}</span>
+                  <span className="tabular-nums">-¥{refundTotal.toLocaleString()}</span>
                 </div>
               )}
             </div>
@@ -184,14 +190,22 @@ export function ClosingSection({
 
             {/* 差異確認 */}
             {cashTotal > 0 && (
-              <div className={`rounded-lg px-3 py-2 text-xs ${Math.abs(cashDiff) === 0 ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
-                <div className="flex justify-between">
-                  <span>期待値（開店準備金 + 現金売上）</span>
-                  <span>¥{expectedCash.toLocaleString()}</span>
+              <div className={`rounded-lg px-3 py-2 text-xs space-y-1 ${Math.abs(cashDiff) === 0 ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+                <div className="flex justify-between opacity-80">
+                  <span>釣り銭準備金</span>
+                  <span className="tabular-nums">¥{openingCash.toLocaleString()}</span>
                 </div>
-                <div className="flex justify-between font-semibold mt-0.5">
+                <div className="flex justify-between opacity-80">
+                  <span>＋ 現金売上</span>
+                  <span className="tabular-nums">¥{cashSales.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between border-t border-current/20 pt-1">
+                  <span>＝ 期待値</span>
+                  <span className="tabular-nums">¥{expectedCash.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between font-semibold pt-0.5">
                   <span>過不足</span>
-                  <span>{cashDiff >= 0 ? '+' : ''}{cashDiff.toLocaleString()}円</span>
+                  <span className="tabular-nums">{cashDiff >= 0 ? '+' : ''}{cashDiff.toLocaleString()}円</span>
                 </div>
               </div>
             )}
