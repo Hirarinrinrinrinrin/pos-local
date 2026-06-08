@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pos-local-v1'
+const CACHE_NAME = 'pos-local-v2'
 
 // インストール時：アプリシェルをキャッシュ
 self.addEventListener('install', (event) => {
