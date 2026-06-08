@@ -1,23 +1,19 @@
 'use client'
 
 import { useState } from 'react'
-import { closingsRepo } from '@/lib/db'
+import { sessionsRepo } from '@/lib/db'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Separator } from '@/components/ui/separator'
 import { toast } from 'sonner'
+import type { BusinessSession } from '@/types'
+import type { SessionSummary } from './page'
 
 interface ClosingSectionProps {
-  todayDate: string
-  isClosed: boolean
-  closedAt: string | null
-  todaySales: number
-  todayCount: number
-  refundCount: number
-  refundTotal: number
-  paymentBreakdown: Record<string, number>
+  session: BusinessSession
+  summary: SessionSummary
   pmNameMap: Record<string, string>
-  openingCash: number
+  onClosed: () => void
 }
 
 const DENOMINATIONS = [
@@ -33,17 +29,14 @@ const DENOMINATIONS = [
   { value: 1,     label: '¥1' },
 ]
 
-export function ClosingSection({
-  todayDate, isClosed: initialClosed, closedAt: initialClosedAt,
-  todaySales, todayCount, refundCount, refundTotal,
-  paymentBreakdown, pmNameMap, openingCash,
-}: ClosingSectionProps) {
-  const [closed, setClosed] = useState(initialClosed)
-  const [closedAt, setClosedAt] = useState(initialClosedAt)
+export function ClosingSection({ session, summary, pmNameMap, onClosed }: ClosingSectionProps) {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [counts, setCounts] = useState<Record<number, string>>({})
   const [note, setNote] = useState('')
   const [saving, setSaving] = useState(false)
+
+  const openingCash = session.opening_cash
+  const { sales: todaySales, count: todayCount, refundCount, refundTotal, paymentBreakdown } = summary
 
   const cashTotal = DENOMINATIONS.reduce((sum, d) => {
     return sum + d.value * (parseInt(counts[d.value] ?? '') || 0)
@@ -66,8 +59,7 @@ export function ClosingSection({
       if (n > 0) denominationBreakdown[String(d.value)] = n
     }
     try {
-      await closingsRepo.add({
-        date: todayDate,
+      await sessionsRepo.close(session.id, {
         total_sales: todaySales,
         order_count: todayCount,
         refund_count: refundCount,
@@ -75,14 +67,13 @@ export function ClosingSection({
         payment_breakdown: paymentBreakdown,
         closing_denomination_breakdown: denominationBreakdown,
         closed_by: null,
-        note: note.trim() || null,
+        closing_note: note.trim() || null,
       })
-      setClosed(true)
-      setClosedAt(new Date().toISOString())
       setDialogOpen(false)
       setCounts({})
       setNote('')
       toast.success('営業を締めました')
+      onClosed()
     } catch {
       toast.error('営業締め処理に失敗しました')
     } finally {
@@ -90,28 +81,16 @@ export function ClosingSection({
     }
   }
 
-  if (closed) {
-    return (
-      <div className="flex items-center gap-3 px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-600">
-        <span className="font-medium">本日の営業は締め済みです</span>
-        <span className="text-gray-400 text-xs">売上 ¥{todaySales.toLocaleString()}</span>
-        {closedAt && (
-          <span className="text-gray-400 text-xs ml-auto">
-            {new Date(closedAt).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })} 締め
-          </span>
-        )}
-      </div>
-    )
-  }
-
   return (
     <>
-      <div className="flex items-center justify-between px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl">
-        <div className="text-sm text-amber-700">
-          <span className="font-semibold">本日の営業締めが未完了です</span>
-          <span className="ml-2 text-amber-500 text-xs">売上 ¥{todaySales.toLocaleString()}（{todayCount}件）</span>
+      <div className="flex items-center justify-between px-4 py-3 bg-green-50 border border-green-200 rounded-xl">
+        <div className="text-sm text-green-700 min-w-0">
+          <span className="font-semibold truncate">営業中：{session.name}</span>
+          <span className="ml-2 text-green-500 text-xs">
+            売上 ¥{todaySales.toLocaleString()}（{todayCount}件）／準備金 ¥{openingCash.toLocaleString()}
+          </span>
         </div>
-        <Button onClick={() => setDialogOpen(true)} className="bg-amber-600 hover:bg-amber-700 text-white text-sm px-4 h-9">
+        <Button onClick={() => setDialogOpen(true)} className="bg-amber-600 hover:bg-amber-700 text-white text-sm px-4 h-9 shrink-0">
           営業を締める
         </Button>
       </div>
@@ -119,7 +98,7 @@ export function ClosingSection({
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-sm max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>営業締め — 現金確認</DialogTitle>
+            <DialogTitle>営業締め — {session.name}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 text-sm">
             {/* 売上サマリー */}
@@ -130,7 +109,7 @@ export function ClosingSection({
               </div>
               <div className="border-t border-gray-200 my-1" />
               <div className="flex justify-between font-semibold">
-                <span>本日の売上</span>
+                <span>この営業の売上</span>
                 <span className="tabular-nums">¥{todaySales.toLocaleString()}</span>
               </div>
               {Object.entries(paymentBreakdown).map(([key, amount]) => (

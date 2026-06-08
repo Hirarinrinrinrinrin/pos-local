@@ -1,7 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
+import { toast } from 'sonner'
 import { ProductCard } from '@/components/register/ProductCard'
 import { CartPanel } from '@/components/register/CartPanel'
 import { PaymentDialog } from '@/components/register/PaymentDialog'
@@ -9,7 +10,8 @@ import { ReceiptDialog } from '@/components/register/ReceiptDialog'
 import { CustomItemDialog } from '@/components/register/CustomItemDialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useCartStore } from '@/store/cartStore'
-import type { Category, Order, PaymentMethodConfig, Product } from '@/types'
+import { sessionsRepo } from '@/lib/db'
+import type { BusinessSession, Category, Order, PaymentMethodConfig, Product } from '@/types'
 
 interface RegisterClientProps {
   categories: Category[]
@@ -22,9 +24,31 @@ export function RegisterClient({ categories, products, paymentMethods }: Registe
   const [customItemOpen, setCustomItemOpen] = useState(false)
   const [completedOrder, setCompletedOrder] = useState<Order | null>(null)
   const [cartDrawerOpen, setCartDrawerOpen] = useState(false)
+  const [activeSession, setActiveSession] = useState<BusinessSession | null>(null)
+  const [sessionKey, setSessionKey] = useState(0)
 
   const { items, total } = useCartStore()
   const itemCount = items.reduce((s, i) => s + i.quantity, 0)
+
+  // 営業中セッションを取得（管理画面で開始されたものを反映）
+  useEffect(() => {
+    async function load() {
+      setActiveSession((await sessionsRepo.active()) ?? null)
+    }
+    load()
+    // 別画面で開店/締めした場合に復帰時へ再取得
+    const onFocus = () => setSessionKey((k) => k + 1)
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [sessionKey])
+
+  const handleCheckout = () => {
+    if (!activeSession) {
+      toast.error('営業が開始されていません。管理画面から開店してください')
+      return
+    }
+    setPaymentOpen(true)
+  }
 
   const handleOrderComplete = (order: Order) => {
     setCompletedOrder(order)
@@ -37,14 +61,35 @@ export function RegisterClient({ categories, products, paymentMethods }: Registe
       {/* 商品エリア */}
       <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
         <header className="flex items-center justify-between px-4 py-2 bg-white border-b border-gray-200 shrink-0">
-          <h1 className="text-lg font-bold text-gray-800">POSレジ</h1>
+          <div className="flex items-center gap-3 min-w-0">
+            <h1 className="text-lg font-bold text-gray-800 shrink-0">POSレジ</h1>
+            {activeSession ? (
+              <span className="flex items-center gap-1.5 text-xs text-green-700 bg-green-50 border border-green-200 rounded-full px-2.5 py-1 truncate">
+                <span className="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0" />
+                <span className="truncate">営業中：{activeSession.name}</span>
+              </span>
+            ) : (
+              <span className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2.5 py-1">
+                営業未開始
+              </span>
+            )}
+          </div>
           <Link
             href="/admin"
-            className="px-3 py-1.5 text-xs rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors"
+            className="px-3 py-1.5 text-xs rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors shrink-0"
           >
             管理画面
           </Link>
         </header>
+
+        {!activeSession && (
+          <div className="px-4 pt-3 shrink-0">
+            <div className="flex items-center justify-between gap-3 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-700">
+              <span className="font-medium">営業が開始されていないため会計できません</span>
+              <Link href="/admin" className="text-xs font-semibold underline shrink-0">開店する</Link>
+            </div>
+          </div>
+        )}
 
         <div className="px-4 pt-3 shrink-0">
           <button
@@ -99,13 +144,13 @@ export function RegisterClient({ categories, products, paymentMethods }: Registe
 
       {/* カートパネル：lg以上は右サイドバー */}
       <div className="hidden lg:flex w-80 shrink-0 flex-col overflow-hidden">
-        <CartPanel onCheckout={() => setPaymentOpen(true)} />
+        <CartPanel onCheckout={handleCheckout} />
       </div>
 
       {/* lg未満：ボトムカートバー */}
       <div className="lg:hidden fixed bottom-0 left-0 right-0 z-30">
         <button
-          onClick={() => setCartDrawerOpen(true)}
+          onClick={() => { if (!activeSession) { handleCheckout(); return } setCartDrawerOpen(true) }}
           className="w-full bg-blue-600 text-white flex items-center justify-between px-5 py-4 shadow-lg active:bg-blue-700 transition-colors touch-manipulation"
         >
           <div className="flex items-center gap-2">
@@ -144,7 +189,7 @@ export function RegisterClient({ categories, products, paymentMethods }: Registe
             </div>
             <div className="flex-1 overflow-y-auto">
               <CartPanel
-                onCheckout={() => { setCartDrawerOpen(false); setPaymentOpen(true) }}
+                onCheckout={() => { setCartDrawerOpen(false); handleCheckout() }}
                 hideHeader
               />
             </div>
@@ -153,7 +198,7 @@ export function RegisterClient({ categories, products, paymentMethods }: Registe
       )}
 
       <CustomItemDialog open={customItemOpen} onClose={() => setCustomItemOpen(false)} />
-      <PaymentDialog open={paymentOpen} onClose={() => setPaymentOpen(false)} onComplete={handleOrderComplete} paymentMethods={paymentMethods} />
+      <PaymentDialog open={paymentOpen} onClose={() => setPaymentOpen(false)} onComplete={handleOrderComplete} paymentMethods={paymentMethods} sessionId={activeSession?.id ?? null} />
       <ReceiptDialog open={!!completedOrder} order={completedOrder} onClose={() => setCompletedOrder(null)} paymentMethods={paymentMethods} />
     </div>
   )

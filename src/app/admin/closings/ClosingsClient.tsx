@@ -1,10 +1,10 @@
 'use client'
 
 import { useState } from 'react'
-import { ordersRepo, orderItemsRepo, jstDayRange } from '@/lib/db'
+import { ordersRepo, orderItemsRepo } from '@/lib/db'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Separator } from '@/components/ui/separator'
-import type { DailyClosing } from '@/types'
+import type { BusinessSession } from '@/types'
 
 interface ProductRow {
   name: string
@@ -13,23 +13,22 @@ interface ProductRow {
 }
 
 interface ClosingsClientProps {
-  closings: DailyClosing[]
+  sessions: BusinessSession[]
   pmNameMap: Record<string, string>
 }
 
-export function ClosingsClient({ closings, pmNameMap }: ClosingsClientProps) {
-  const [selected, setSelected] = useState<DailyClosing | null>(null)
+export function ClosingsClient({ sessions, pmNameMap }: ClosingsClientProps) {
+  const [selected, setSelected] = useState<BusinessSession | null>(null)
   const [productBreakdown, setProductBreakdown] = useState<ProductRow[]>([])
   const [loadingProducts, setLoadingProducts] = useState(false)
 
-  const handleRowClick = async (closing: DailyClosing) => {
-    setSelected(closing)
+  const handleRowClick = async (session: BusinessSession) => {
+    setSelected(session)
     setProductBreakdown([])
     setLoadingProducts(true)
 
     try {
-      const { start, end } = jstDayRange(closing.date)
-      const orders = await ordersRepo.forDateRange(start, end)
+      const orders = await ordersRepo.forSession(session.id)
       const completedIds = orders
         .filter((o) => o.status === 'completed')
         .map((o) => o.id)
@@ -62,6 +61,7 @@ export function ClosingsClient({ closings, pmNameMap }: ClosingsClientProps) {
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr className="text-left text-xs text-gray-500">
               <th className="px-4 py-3 font-medium">日付</th>
+              <th className="px-4 py-3 font-medium">案件</th>
               <th className="px-4 py-3 font-medium text-right">取引件数</th>
               <th className="px-4 py-3 font-medium text-right">売上合計</th>
               <th className="px-4 py-3 font-medium text-right">返金</th>
@@ -70,39 +70,39 @@ export function ClosingsClient({ closings, pmNameMap }: ClosingsClientProps) {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {closings.length === 0 ? (
+            {sessions.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-gray-400">
+                <td colSpan={7} className="px-4 py-8 text-center text-gray-400">
                   締め履歴がありません
                 </td>
               </tr>
             ) : (
-              closings.map((c) => (
+              sessions.map((c) => (
                 <tr
                   key={c.id}
                   className="hover:bg-gray-50 cursor-pointer"
                   onClick={() => handleRowClick(c)}
                 >
                   <td className="px-4 py-3 font-medium text-gray-800">{c.date}</td>
-                  <td className="px-4 py-3 text-right text-gray-600">{c.order_count}件</td>
+                  <td className="px-4 py-3 text-gray-700 truncate max-w-[160px]">{c.name}</td>
+                  <td className="px-4 py-3 text-right text-gray-600">{c.order_count ?? 0}件</td>
                   <td className="px-4 py-3 text-right font-semibold text-gray-900">
-                    ¥{c.total_sales.toLocaleString()}
+                    ¥{(c.total_sales ?? 0).toLocaleString()}
                   </td>
                   <td className="px-4 py-3 text-right text-gray-500">
-                    {c.refund_count > 0 ? (
+                    {(c.refund_count ?? 0) > 0 ? (
                       <span className="text-red-500">-{c.refund_count}件</span>
                     ) : (
                       '—'
                     )}
                   </td>
                   <td className="px-4 py-3 text-gray-500 text-xs">
-                    {new Date(c.closed_at).toLocaleTimeString('ja-JP', {
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
+                    {c.closed_at
+                      ? new Date(c.closed_at).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })
+                      : '—'}
                   </td>
                   <td className="px-4 py-3 text-gray-400 text-xs truncate max-w-[120px]">
-                    {c.note ?? '—'}
+                    {c.closing_note ?? '—'}
                   </td>
                 </tr>
               ))
@@ -115,7 +115,7 @@ export function ClosingsClient({ closings, pmNameMap }: ClosingsClientProps) {
       <Dialog open={!!selected} onOpenChange={() => setSelected(null)}>
         <DialogContent className="max-w-sm max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{selected?.date} の締め詳細</DialogTitle>
+            <DialogTitle>{selected?.name}（{selected?.date}）の締め詳細</DialogTitle>
           </DialogHeader>
           {selected && (
             <div className="space-y-4 text-sm">
@@ -123,27 +123,27 @@ export function ClosingsClient({ closings, pmNameMap }: ClosingsClientProps) {
               <div className="bg-gray-50 rounded-xl p-4 space-y-2">
                 <div className="flex justify-between font-semibold text-base">
                   <span>売上合計</span>
-                  <span>¥{selected.total_sales.toLocaleString()}</span>
+                  <span>¥{(selected.total_sales ?? 0).toLocaleString()}</span>
                 </div>
                 <div className="flex justify-between text-gray-500">
                   <span>取引件数</span>
-                  <span>{selected.order_count}件</span>
+                  <span>{selected.order_count ?? 0}件</span>
                 </div>
-                {selected.refund_count > 0 && (
+                {(selected.refund_count ?? 0) > 0 && (
                   <div className="flex justify-between text-red-500">
                     <span>返金</span>
                     <span>
-                      -¥{selected.refund_total.toLocaleString()}（{selected.refund_count}件）
+                      -¥{(selected.refund_total ?? 0).toLocaleString()}（{selected.refund_count}件）
                     </span>
                   </div>
                 )}
               </div>
 
               {/* 支払方法別 */}
-              {Object.keys(selected.payment_breakdown).length > 0 && (
+              {Object.keys(selected.payment_breakdown ?? {}).length > 0 && (
                 <div className="space-y-1.5">
                   <p className="text-xs text-gray-500 font-medium">支払方法別</p>
-                  {Object.entries(selected.payment_breakdown).map(([key, amount]) => (
+                  {Object.entries(selected.payment_breakdown ?? {}).map(([key, amount]) => (
                     <div key={key} className="flex justify-between text-gray-600">
                       <span>{pmNameMap[key] ?? key}</span>
                       <span>¥{(amount as number).toLocaleString()}</span>
@@ -185,19 +185,21 @@ export function ClosingsClient({ closings, pmNameMap }: ClosingsClientProps) {
                 )}
               </div>
 
-              {selected.note && (
+              {selected.closing_note && (
                 <>
                   <Separator />
                   <div>
                     <p className="text-xs text-gray-500 font-medium mb-1">メモ</p>
-                    <p className="text-gray-700">{selected.note}</p>
+                    <p className="text-gray-700">{selected.closing_note}</p>
                   </div>
                 </>
               )}
 
-              <p className="text-xs text-gray-400 text-right">
-                {new Date(selected.closed_at).toLocaleString('ja-JP')} 締め
-              </p>
+              {selected.closed_at && (
+                <p className="text-xs text-gray-400 text-right">
+                  {new Date(selected.closed_at).toLocaleString('ja-JP')} 締め
+                </p>
+              )}
             </div>
           )}
         </DialogContent>

@@ -14,11 +14,12 @@ interface PaymentDialogProps {
   onClose: () => void
   onComplete: (order: Order) => void
   paymentMethods: PaymentMethodConfig[]
+  sessionId: string | null
 }
 
 const QUICK_AMOUNTS = [1000, 5000, 10000]
 
-export function PaymentDialog({ open, onClose, onComplete, paymentMethods }: PaymentDialogProps) {
+export function PaymentDialog({ open, onClose, onComplete, paymentMethods, sessionId }: PaymentDialogProps) {
   const { items, total, clearCart } = useCartStore()
   const [step, setStep] = useState<1 | 2>(1)
   const [method, setMethod] = useState<string>(paymentMethods[0]?.key ?? '')
@@ -42,6 +43,10 @@ export function PaymentDialog({ open, onClose, onComplete, paymentMethods }: Pay
   const requiresChange = selectedMethod?.requires_change ?? false
 
   const handleSubmit = async () => {
+    if (!sessionId) {
+      toast.error('営業が開始されていません')
+      return
+    }
     if (requiresAmountInput && enteredAmount === 0) {
       toast.error('金額を入力してください')
       return
@@ -67,6 +72,7 @@ export function PaymentDialog({ open, onClose, onComplete, paymentMethods }: Pay
           payment_amount: requiresAmountInput ? enteredAmount : totalAmount,
           change_amount: requiresChange ? Math.max(0, change) : 0,
           status: 'completed',
+          session_id: sessionId,
         },
         orderItems
       )

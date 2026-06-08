@@ -7,6 +7,7 @@ import type {
   OrderItem,
   DailyOpening,
   DailyClosing,
+  BusinessSession,
   Staff,
 } from '@/types'
 
@@ -19,8 +20,9 @@ export class PosDatabase extends Dexie {
   paymentMethods!: Table<PaymentMethodConfig>
   orders!: Table<Order>
   orderItems!: Table<OrderItem>
-  dailyOpenings!: Table<DailyOpening>
-  dailyClosings!: Table<DailyClosing>
+  dailyOpenings!: Table<DailyOpening>   // v1 レガシー（v2 で sessions へ移行）
+  dailyClosings!: Table<DailyClosing>   // v1 レガシー（v2 で sessions へ移行）
+  sessions!: Table<BusinessSession>
   staff!: Table<Staff>
 
   constructor() {
@@ -35,6 +37,86 @@ export class PosDatabase extends Dexie {
       dailyClosings: 'id, &date',
       staff:         'id, name, role',
     })
+
+    // v2: 営業セッション化。orders に session_id を追加し、
+    // 既存の dailyOpenings / dailyClosings を sessions へ移行する。
+    this.version(2)
+      .stores({
+        orders:   'id, created_at, status, payment_method, session_id',
+        sessions: 'id, date, status',
+      })
+      .upgrade(async (tx) => {
+        const jstDate = (iso: string) =>
+          new Date(new Date(iso).getTime() + JST_OFFSET).toISOString().slice(0, 10)
+
+        const openings = await tx.table('dailyOpenings').toArray()
+        const closings = await tx.table('dailyClosings').toArray()
+        const closingByDate: Record<string, DailyClosing> = Object.fromEntries(
+          closings.map((c) => [c.date, c])
+        )
+        const sessionByDate: Record<string, string> = {}
+
+        for (const op of openings) {
+          const c = closingByDate[op.date]
+          const id = newId()
+          sessionByDate[op.date] = id
+          await tx.table('sessions').add({
+            id,
+            date: op.date,
+            name: op.date,
+            status: c ? 'closed' : 'open',
+            opening_cash: op.opening_cash,
+            opening_denomination_breakdown: op.denomination_breakdown ?? {},
+            opened_by: op.opened_by ?? null,
+            opening_note: op.note ?? null,
+            opened_at: op.opened_at,
+            total_sales: c?.total_sales ?? null,
+            order_count: c?.order_count ?? null,
+            refund_count: c?.refund_count ?? null,
+            refund_total: c?.refund_total ?? null,
+            payment_breakdown: c?.payment_breakdown ?? null,
+            closing_denomination_breakdown: c?.closing_denomination_breakdown ?? null,
+            closed_by: c?.closed_by ?? null,
+            closing_note: c?.note ?? null,
+            closed_at: c?.closed_at ?? null,
+          })
+        }
+
+        // 開店記録のない締めも取りこぼさない
+        for (const c of closings) {
+          if (sessionByDate[c.date]) continue
+          const id = newId()
+          sessionByDate[c.date] = id
+          await tx.table('sessions').add({
+            id,
+            date: c.date,
+            name: c.date,
+            status: 'closed',
+            opening_cash: 0,
+            opening_denomination_breakdown: {},
+            opened_by: null,
+            opening_note: null,
+            opened_at: c.closed_at,
+            total_sales: c.total_sales,
+            order_count: c.order_count,
+            refund_count: c.refund_count,
+            refund_total: c.refund_total,
+            payment_breakdown: c.payment_breakdown,
+            closing_denomination_breakdown: c.closing_denomination_breakdown,
+            closed_by: c.closed_by,
+            closing_note: c.note,
+            closed_at: c.closed_at,
+          })
+        }
+
+        // 既存注文を JST 日付でセッションに割り当て
+        const orders = await tx.table('orders').toArray()
+        for (const o of orders) {
+          await tx.table('orders').update(o.id, {
+            session_id: sessionByDate[jstDate(o.created_at)] ?? null,
+          })
+        }
+      })
   }
 }
 
@@ -145,6 +227,8 @@ export const ordersRepo = {
   },
   forDateRange: (startISO: string, endISO: string) =>
     db.orders.where('created_at').between(startISO, endISO, true, true).toArray(),
+  forSession: (sessionId: string) =>
+    db.orders.where('session_id').equals(sessionId).toArray(),
   count: () => db.orders.where('status').equals('completed').count(),
   add: async (
     payload: Omit<Order, 'id' | 'created_at' | 'order_items' | 'staff' | 'staff_id'>,
@@ -171,22 +255,58 @@ export const orderItemsRepo = {
 }
 
 // ──────────────────────────────────────────────
-// Daily Openings
+// Business Sessions（営業セッション：1日に複数の開店→締めサイクル）
 // ──────────────────────────────────────────────
-export const openingsRepo = {
-  forDate: (date: string) => db.dailyOpenings.where('date').equals(date).first(),
-  add: (payload: Omit<DailyOpening, 'id' | 'opened_at'>) =>
-    db.dailyOpenings.add({ id: newId(), opened_at: new Date().toISOString(), ...payload }),
+type SessionOpenInput = {
+  date: string
+  name: string
+  opening_cash: number
+  opening_denomination_breakdown: Record<string, number>
+  opened_by: string | null
+  opening_note: string | null
 }
 
-// ──────────────────────────────────────────────
-// Daily Closings
-// ──────────────────────────────────────────────
-export const closingsRepo = {
-  list:    () => db.dailyClosings.orderBy('date').reverse().toArray(),
-  forDate: (date: string) => db.dailyClosings.where('date').equals(date).first(),
-  add: (payload: Omit<DailyClosing, 'id' | 'closed_at'>) =>
-    db.dailyClosings.add({ id: newId(), closed_at: new Date().toISOString(), ...payload }),
+type SessionCloseInput = {
+  total_sales: number
+  order_count: number
+  refund_count: number
+  refund_total: number
+  payment_breakdown: Record<string, number>
+  closing_denomination_breakdown: Record<string, number>
+  closed_by: string | null
+  closing_note: string | null
+}
+
+export const sessionsRepo = {
+  // 営業中（開いている）セッション。同時に開けるのは1つだけ。
+  active: () => db.sessions.where('status').equals('open').first(),
+  // 新しい順（開店時刻の降順）
+  list: async (): Promise<BusinessSession[]> => {
+    const all = await db.sessions.toArray()
+    return all.sort((a, b) => b.opened_at.localeCompare(a.opened_at))
+  },
+  forDate: (date: string) => db.sessions.where('date').equals(date).toArray(),
+  open: async (payload: SessionOpenInput): Promise<BusinessSession> => {
+    const session: BusinessSession = {
+      id: newId(),
+      status: 'open',
+      opened_at: new Date().toISOString(),
+      total_sales: null,
+      order_count: null,
+      refund_count: null,
+      refund_total: null,
+      payment_breakdown: null,
+      closing_denomination_breakdown: null,
+      closed_by: null,
+      closing_note: null,
+      closed_at: null,
+      ...payload,
+    }
+    await db.sessions.add(session)
+    return session
+  },
+  close: (id: string, payload: SessionCloseInput) =>
+    db.sessions.update(id, { status: 'closed', closed_at: new Date().toISOString(), ...payload }),
 }
 
 // ──────────────────────────────────────────────
@@ -215,6 +335,7 @@ export const resetRepo = {
       db.orderItems.clear(),
       db.dailyOpenings.clear(),
       db.dailyClosings.clear(),
+      db.sessions.clear(),
     ])
   },
   all: async () => {
@@ -223,6 +344,7 @@ export const resetRepo = {
       db.orderItems.clear(),
       db.dailyOpenings.clear(),
       db.dailyClosings.clear(),
+      db.sessions.clear(),
       db.products.clear(),
       db.categories.clear(),
       db.paymentMethods.clear(),

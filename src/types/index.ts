@@ -48,6 +48,7 @@ export interface Order {
   change_amount: number
   status: OrderStatus
   staff_id: string | null
+  session_id: string | null   // 所属する営業セッション
   created_at: string
   order_items?: OrderItem[]
   staff?: Staff
@@ -95,4 +96,29 @@ export interface DailyClosing {
   closed_by: string | null
   note: string | null
   closed_at: string
+}
+
+// 営業セッション：1回の「開店→締め」サイクル。1日に複数持てる。
+// キッチンカーの午前/午後など、案件ごとに独立した準備金・現金精算・売上を扱う。
+export interface BusinessSession {
+  id: string
+  date: string                   // 開店日（JST 'YYYY-MM-DD'）。集計・並び替え用
+  name: string                   // 案件名/ロケ地（例：朝/〇〇マルシェ）
+  status: 'open' | 'closed'
+  // 開店時
+  opening_cash: number
+  opening_denomination_breakdown: Record<string, number>
+  opened_by: string | null
+  opening_note: string | null
+  opened_at: string
+  // 締め時に確定（それまで null）
+  total_sales: number | null
+  order_count: number | null
+  refund_count: number | null
+  refund_total: number | null
+  payment_breakdown: Record<string, number> | null
+  closing_denomination_breakdown: Record<string, number> | null
+  closed_by: string | null
+  closing_note: string | null
+  closed_at: string | null
 }

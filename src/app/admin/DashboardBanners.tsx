@@ -1,64 +1,39 @@
 'use client'
 
-import { useState } from 'react'
 import { OpeningSection } from './OpeningSection'
 import { ClosingSection } from './ClosingSection'
+import type { BusinessSession } from '@/types'
+import type { SessionSummary } from './page'
 
 interface DashboardBannersProps {
   todayDate: string
-  // 開店
-  isOpened: boolean
-  openedAt: string | null
-  openingCash: number
-  // 営業締め
-  isClosed: boolean
-  closedAt: string | null
-  todaySales: number
-  todayCount: number
-  refundCount: number
-  refundTotal: number
-  paymentBreakdown: Record<string, number>
+  activeSession: BusinessSession | null
+  activeSummary: SessionSummary | null
   pmNameMap: Record<string, string>
+  onChanged: () => void
 }
 
 export function DashboardBanners({
   todayDate,
-  isOpened,
-  openedAt,
-  openingCash: initialOpeningCash,
-  isClosed,
-  closedAt,
-  todaySales,
-  todayCount,
-  refundCount,
-  refundTotal,
-  paymentBreakdown,
+  activeSession,
+  activeSummary,
   pmNameMap,
+  onChanged,
 }: DashboardBannersProps) {
-  // 開店処理後に ClosingSection へ釣り銭準備金を即時反映するための state
-  const [openingCash, setOpeningCash] = useState(initialOpeningCash)
-
   return (
     <div className="space-y-3">
-      <OpeningSection
-        todayDate={todayDate}
-        isOpened={isOpened}
-        openedAt={openedAt}
-        openingCash={openingCash}
-        onOpeningConfirmed={setOpeningCash}
-      />
-      <ClosingSection
-        todayDate={todayDate}
-        isClosed={isClosed}
-        closedAt={closedAt}
-        todaySales={todaySales}
-        todayCount={todayCount}
-        refundCount={refundCount}
-        refundTotal={refundTotal}
-        paymentBreakdown={paymentBreakdown}
-        pmNameMap={pmNameMap}
-        openingCash={openingCash}
-      />
+      {activeSession && activeSummary ? (
+        // 営業中：締め処理を表示
+        <ClosingSection
+          session={activeSession}
+          summary={activeSummary}
+          pmNameMap={pmNameMap}
+          onClosed={onChanged}
+        />
+      ) : (
+        // 未開始：新しい営業を開始
+        <OpeningSection todayDate={todayDate} onOpened={onChanged} />
+      )}
     </div>
   )
 }
