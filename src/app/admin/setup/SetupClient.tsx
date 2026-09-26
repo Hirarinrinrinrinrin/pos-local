@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Separator } from '@/components/ui/separator'
 import { toast } from 'sonner'
+import { BackupExportCard } from './BackupExportCard'
 
 // =============================================
 // CSV パーサー（商品）
@@ -473,6 +474,9 @@ export function SetupClient() {
           )}
         </CardContent>
       </Card>
+
+      {/* ===== データ書き出し（移行用） ===== */}
+      <BackupExportCard />
 
       <Separator />
 
